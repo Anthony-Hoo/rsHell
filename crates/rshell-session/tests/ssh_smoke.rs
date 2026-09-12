@@ -7,7 +7,10 @@ use std::{
     net::SocketAddr,
     path::{Path, PathBuf},
     process::Command,
-    sync::atomic::{AtomicUsize, Ordering},
+    sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    },
     time::Duration,
 };
 
@@ -20,13 +23,16 @@ use rshell_session::{
     TransportError, TransportEvent, TransportRequest, interaction_channel,
 };
 use rshell_storage::{CredentialVault, MemoryCredentialVault};
-use russh::keys::{PublicKey, parse_public_key_base64};
+use russh::{
+    ChannelMsg, client,
+    keys::{PublicKey, parse_public_key_base64},
+};
 use secrecy::SecretString;
 use tempfile::TempDir;
 
 use support::ssh_server::{
-    KBI_ANSWERS, KEY_PASSPHRASE, PASSWORD, ServerAuth, ServerSnapshot, TestSshServer, USERNAME,
-    write_encrypted_client_key,
+    KBI_ANSWERS, KEY_PASSPHRASE, PASSWORD, REMOTE_COMMAND_OUTPUT, ServerAuth, ServerSnapshot,
+    TestSshServer, USERNAME, write_encrypted_client_key,
 };
 
 const CASE_TIMEOUT: Duration = Duration::from_secs(8);
@@ -805,6 +811,147 @@ async fn native_remote_command_preserves_output_nonzero_exit_and_eof_cleanup() {
 
     let snapshot = shutdown_native(&mut transport, server).await;
     assert_eq!(snapshot.remote_commands, [b"exit:37".to_vec()]);
+}
+
+struct AcceptFixtureHostKey;
+
+impl client::Handler for AcceptFixtureHostKey {
+    type Error = russh::Error;
+
+    async fn check_server_key(
+        &mut self,
+        _server_public_key: &PublicKey,
+    ) -> Result<bool, Self::Error> {
+        Ok(true)
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum RemoteCommandMessage {
+    Data(Vec<u8>),
+    ExitStatus(u32),
+    Eof,
+    Close,
+}
+
+async fn connect_fixture_client(address: SocketAddr) -> client::Handle<AcceptFixtureHostKey> {
+    let stream = tokio::net::TcpStream::connect(address)
+        .await
+        .expect("connect low-level russh fixture client");
+    let mut client = client::connect_stream(
+        Arc::new(client::Config::default()),
+        stream,
+        AcceptFixtureHostKey,
+    )
+    .await
+    .expect("start low-level russh fixture client");
+    assert!(
+        client
+            .authenticate_password(USERNAME, PASSWORD)
+            .await
+            .expect("authenticate low-level russh fixture client")
+            .success(),
+        "fixture password authentication"
+    );
+    client
+}
+
+async fn fixture_command_messages(
+    client: &mut client::Handle<AcceptFixtureHostKey>,
+    exit_status: u32,
+) -> Vec<RemoteCommandMessage> {
+    let mut channel = client
+        .channel_open_session()
+        .await
+        .expect("open low-level russh fixture channel");
+    channel
+        .exec(true, format!("exit:{exit_status}").into_bytes())
+        .await
+        .expect("execute low-level russh fixture command");
+
+    tokio::time::timeout(CASE_TIMEOUT, async {
+        let mut messages = Vec::new();
+        while !matches!(messages.last(), Some(RemoteCommandMessage::Close)) {
+            match channel
+                .wait()
+                .await
+                .expect("fixture channel ended before close")
+            {
+                ChannelMsg::Success => {}
+                ChannelMsg::Data { data } => {
+                    messages.push(RemoteCommandMessage::Data(data.to_vec()));
+                }
+                ChannelMsg::ExitStatus { exit_status } => {
+                    messages.push(RemoteCommandMessage::ExitStatus(exit_status));
+                }
+                ChannelMsg::Eof => messages.push(RemoteCommandMessage::Eof),
+                ChannelMsg::Close => messages.push(RemoteCommandMessage::Close),
+                message => panic!("unexpected fixture channel message: {message:?}"),
+            }
+        }
+        messages
+    })
+    .await
+    .expect("low-level russh fixture command timed out")
+}
+
+fn expected_fixture_command_messages(exit_status: u32) -> [RemoteCommandMessage; 4] {
+    [
+        RemoteCommandMessage::Data(REMOTE_COMMAND_OUTPUT.to_vec()),
+        RemoteCommandMessage::ExitStatus(exit_status),
+        RemoteCommandMessage::Eof,
+        RemoteCommandMessage::Close,
+    ]
+}
+
+#[tokio::test]
+async fn fixture_exec_flushes_close_after_remote_command_termination_batch() {
+    let server = TestSshServer::start_observing_exec_flushes(ServerAuth::Password).await;
+    let mut client = connect_fixture_client(server.address()).await;
+    let messages = fixture_command_messages(&mut client, 37).await;
+
+    assert_eq!(
+        messages,
+        expected_fixture_command_messages(37),
+        "fixture command protocol order"
+    );
+    assert_eq!(
+        server.exec_flush_generations(),
+        2,
+        "exec termination and close must complete in exactly two post-arm socket flush generations"
+    );
+
+    client
+        .disconnect(russh::Disconnect::ByApplication, "", "")
+        .await
+        .expect("disconnect low-level russh fixture client");
+    let snapshot = shutdown_server(server).await;
+    assert_eq!(snapshot.remote_commands, [b"exit:37".to_vec()]);
+}
+
+#[tokio::test]
+async fn default_fixture_accepts_sequential_execs_without_observation_limits() {
+    let server = TestSshServer::start(ServerAuth::Password).await;
+
+    for exit_status in [11, 12] {
+        let mut client = connect_fixture_client(server.address()).await;
+        assert_eq!(
+            fixture_command_messages(&mut client, exit_status).await,
+            expected_fixture_command_messages(exit_status),
+            "default fixture command protocol order"
+        );
+        client
+            .disconnect(russh::Disconnect::ByApplication, "", "")
+            .await
+            .expect("disconnect low-level russh fixture client");
+    }
+
+    let snapshot = shutdown_server(server).await;
+    assert_eq!(snapshot.successful_authentications, 2);
+    assert_eq!(
+        snapshot.remote_commands,
+        [b"exit:11".to_vec(), b"exit:12".to_vec()]
+    );
 }
 
 #[tokio::test]

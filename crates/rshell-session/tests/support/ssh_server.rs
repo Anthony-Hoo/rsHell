@@ -6,10 +6,12 @@ use std::{
     hash::{Hash, Hasher},
     net::SocketAddr,
     path::{Path, PathBuf},
+    pin::Pin,
     sync::{
         Arc, Mutex,
-        atomic::{AtomicUsize, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
     },
+    task::{Context, Poll},
     time::Duration,
 };
 
@@ -19,6 +21,7 @@ use russh::{
     server::{self, Auth, Msg, Response, Session},
 };
 use tokio::{
+    io::{AsyncRead, AsyncWrite, ReadBuf},
     net::TcpListener,
     sync::oneshot,
     task::{JoinHandle, JoinSet},
@@ -28,6 +31,7 @@ pub const USERNAME: &str = "contract-user";
 pub const PASSWORD: &str = "native-password-sentinel";
 pub const KEY_PASSPHRASE: &str = "test";
 pub const KBI_ANSWERS: [&str; 2] = ["user-visible", "one-time-code"];
+pub const REMOTE_COMMAND_OUTPUT: &[u8] = b"remote-output-before-exit\r\n";
 
 const ENCRYPTED_CLIENT_KEY: &str = "-----BEGIN OPENSSH PRIVATE KEY-----
 b3BlbnNzaC1rZXktdjEAAAAACmFlczI1Ni1jdHIAAAAGYmNyeXB0AAAAGAAAABD1phlku5
@@ -156,6 +160,7 @@ pub struct TestSshServer {
     address: SocketAddr,
     host_key: PublicKey,
     probe: Arc<ServerProbe>,
+    exec_flush_probe: Option<Arc<ExecFlushProbe>>,
     shutdown: Option<oneshot::Sender<()>>,
     task: Option<JoinHandle<Result<(), String>>>,
 }
@@ -166,18 +171,34 @@ impl TestSshServer {
     }
 
     pub async fn start_with_initial_output(auth: ServerAuth, initial_output: Vec<u8>) -> Self {
-        Self::start_at_with_initial_output("127.0.0.1:0".parse().unwrap(), auth, initial_output)
-            .await
+        Self::start_at_with_initial_output(
+            "127.0.0.1:0".parse().unwrap(),
+            auth,
+            initial_output,
+            None,
+        )
+        .await
+    }
+
+    pub async fn start_observing_exec_flushes(auth: ServerAuth) -> Self {
+        Self::start_at_with_initial_output(
+            "127.0.0.1:0".parse().unwrap(),
+            auth,
+            Vec::new(),
+            Some(Arc::new(ExecFlushProbe::default())),
+        )
+        .await
     }
 
     pub async fn start_at(address: SocketAddr, auth: ServerAuth) -> Self {
-        Self::start_at_with_initial_output(address, auth, Vec::new()).await
+        Self::start_at_with_initial_output(address, auth, Vec::new(), None).await
     }
 
     async fn start_at_with_initial_output(
         address: SocketAddr,
         auth: ServerAuth,
         initial_output: Vec<u8>,
+        exec_flush_probe: Option<Arc<ExecFlushProbe>>,
     ) -> Self {
         let listener = TcpListener::bind(address)
             .await
@@ -203,12 +224,14 @@ impl TestSshServer {
             auth,
             initial_output,
             Arc::clone(&probe),
+            exec_flush_probe.clone(),
             shutdown_rx,
         ));
         Self {
             address,
             host_key: public_host_key,
             probe,
+            exec_flush_probe,
             shutdown: Some(shutdown_tx),
             task: Some(task),
         }
@@ -224,6 +247,13 @@ impl TestSshServer {
 
     pub fn snapshot(&self) -> ServerSnapshot {
         self.probe.snapshot()
+    }
+
+    pub fn exec_flush_generations(&self) -> usize {
+        self.exec_flush_probe
+            .as_ref()
+            .expect("exec flush observation was not enabled")
+            .completed_after_arm()
     }
 
     pub async fn shutdown(mut self) -> ServerSnapshot {
@@ -285,6 +315,7 @@ async fn run_listener(
     auth: ServerAuth,
     initial_output: Vec<u8>,
     probe: Arc<ServerProbe>,
+    exec_flush_probe: Option<Arc<ExecFlushProbe>>,
     mut shutdown: oneshot::Receiver<()>,
 ) -> Result<(), String> {
     let mut sessions = JoinSet::new();
@@ -300,8 +331,10 @@ async fn run_listener(
                     auth.clone(),
                     initial_output.clone(),
                     Arc::clone(&probe),
+                    exec_flush_probe.clone(),
                 );
                 let config = Arc::clone(&config);
+                let stream = FlushRecordingStream::new(stream, exec_flush_probe.clone());
                 sessions.spawn(async move {
                     let _active = ActiveSession(session_probe);
                     let running = server::run_stream(config, stream, handler).await;
@@ -337,15 +370,22 @@ struct TestHandler {
     auth: ServerAuth,
     initial_output: Vec<u8>,
     probe: Arc<ServerProbe>,
+    exec_flush_probe: Option<Arc<ExecFlushProbe>>,
     channel_open: bool,
 }
 
 impl TestHandler {
-    fn new(auth: ServerAuth, initial_output: Vec<u8>, probe: Arc<ServerProbe>) -> Self {
+    fn new(
+        auth: ServerAuth,
+        initial_output: Vec<u8>,
+        probe: Arc<ServerProbe>,
+        exec_flush_probe: Option<Arc<ExecFlushProbe>>,
+    ) -> Self {
         Self {
             auth,
             initial_output,
             probe,
+            exec_flush_probe,
             channel_open: false,
         }
     }
@@ -543,8 +583,8 @@ impl server::Handler for TestHandler {
             .remote_commands
             .push(command.to_vec());
         session.channel_success(channel)?;
-        session.data(channel, b"remote-output-before-exit\r\n".as_slice())?;
-        self.record_output(b"remote-output-before-exit\r\n".len());
+        session.data(channel, REMOTE_COMMAND_OUTPUT)?;
+        self.record_output(REMOTE_COMMAND_OUTPUT.len());
         let status = command
             .strip_prefix(b"exit:")
             .and_then(|value| std::str::from_utf8(value).ok())
@@ -552,7 +592,14 @@ impl server::Handler for TestHandler {
             .unwrap_or(0);
         session.exit_status_request(channel, status)?;
         session.eof(channel)?;
-        session.close(channel)?;
+        if let Some(probe) = &self.exec_flush_probe {
+            probe.arm();
+        }
+        session
+            .handle()
+            .close(channel)
+            .await
+            .map_err(|()| russh::Error::SendError)?;
         Ok(())
     }
 
@@ -603,6 +650,82 @@ impl server::Handler for TestHandler {
             self.probe.open_channels.fetch_sub(1, Ordering::SeqCst);
         }
         Ok(())
+    }
+}
+
+#[derive(Default)]
+struct ExecFlushProbe {
+    armed: AtomicBool,
+    completed_flushes: AtomicUsize,
+}
+
+impl ExecFlushProbe {
+    fn arm(&self) {
+        assert!(
+            !self.armed.swap(true, Ordering::SeqCst),
+            "SSH test server supports one observed exec request per fixture"
+        );
+    }
+
+    fn record_completed_flush(&self) {
+        if self.armed.load(Ordering::SeqCst) {
+            self.completed_flushes.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
+    fn completed_after_arm(&self) -> usize {
+        self.completed_flushes.load(Ordering::SeqCst)
+    }
+}
+
+struct FlushRecordingStream {
+    stream: tokio::net::TcpStream,
+    probe: Option<Arc<ExecFlushProbe>>,
+}
+
+impl FlushRecordingStream {
+    fn new(stream: tokio::net::TcpStream, probe: Option<Arc<ExecFlushProbe>>) -> Self {
+        Self { stream, probe }
+    }
+}
+
+impl AsyncRead for FlushRecordingStream {
+    fn poll_read(
+        mut self: Pin<&mut Self>,
+        context: &mut Context<'_>,
+        buffer: &mut ReadBuf<'_>,
+    ) -> Poll<std::io::Result<()>> {
+        Pin::new(&mut self.stream).poll_read(context, buffer)
+    }
+}
+
+impl AsyncWrite for FlushRecordingStream {
+    fn poll_write(
+        mut self: Pin<&mut Self>,
+        context: &mut Context<'_>,
+        buffer: &[u8],
+    ) -> Poll<Result<usize, std::io::Error>> {
+        Pin::new(&mut self.stream).poll_write(context, buffer)
+    }
+
+    fn poll_flush(
+        mut self: Pin<&mut Self>,
+        context: &mut Context<'_>,
+    ) -> Poll<Result<(), std::io::Error>> {
+        let result = Pin::new(&mut self.stream).poll_flush(context);
+        if matches!(result, Poll::Ready(Ok(())))
+            && let Some(probe) = &self.probe
+        {
+            probe.record_completed_flush();
+        }
+        result
+    }
+
+    fn poll_shutdown(
+        mut self: Pin<&mut Self>,
+        context: &mut Context<'_>,
+    ) -> Poll<Result<(), std::io::Error>> {
+        Pin::new(&mut self.stream).poll_shutdown(context)
     }
 }
 
