@@ -4,6 +4,29 @@ const DESIGN: &str = include_str!("../../../DESIGN.md");
 const SIDEBAR_WIDGETS: &str = include_str!("../src/connection_sidebar_widgets.rs");
 const TERMINAL_WIDGETS: &str = include_str!("../src/terminal_view_widgets.rs");
 
+#[test]
+fn semantic_colors_are_application_owned() {
+    let css = embedded_theme_css();
+    for (name, color) in [
+        ("error", "#ff99a4"),
+        ("warning", "#fce100"),
+        ("success", "#6ccb8e"),
+    ] {
+        assert!(
+            css.contains(&format!("@define-color rshell_{name} {color};")),
+            "missing application token rshell_{name}"
+        );
+        assert!(
+            !css.contains(&format!("@{name}_color")),
+            "ambient semantic alias {name}"
+        );
+        assert!(contrast_ratio(color, "#2b2b2b") >= 4.5);
+        assert!(DESIGN.contains(&format!("semantic-{name} | `{color}`")));
+    }
+    assert!(DESIGN.contains("| Standard | `900–1439` | 260px"));
+    assert!(DESIGN.contains("2026-09-09-windows-ui-refinement-design.md"));
+}
+
 fn rule_body<'a>(css: &'a str, selector: &str) -> &'a str {
     css.split_once(selector)
         .unwrap_or_else(|| panic!("missing CSS selector {selector}"))
@@ -265,8 +288,40 @@ fn operational_labels_do_not_reduce_contrast_with_opacity() {
             "{selector} needs an explicit color"
         );
         assert!(
-            !body.contains("opacity:"),
+            body.lines()
+                .filter(|line| line.trim().starts_with("opacity:"))
+                .all(|line| line.trim() == "opacity: 1;"),
             "{selector} must not reduce operational text contrast"
         );
     }
+}
+
+#[test]
+fn note_surround_and_focus_use_fluent_tokens() {
+    let css = embedded_theme_css();
+    let body = rule_body(css, ".editor-dialog textview {");
+    for token in [
+        "background: #2b2b2b",
+        "color: #f5f5f5",
+        "border-radius: 4px",
+    ] {
+        assert!(body.contains(token), "note surround missing {token}");
+    }
+    let focus = rule_body(css, ".editor-dialog textview:focus {");
+    assert!(focus.contains("outline: 2px solid #60cdff"));
+    assert!(focus.contains("outline-offset: -2px"));
+}
+
+#[test]
+fn dialog_instructions_and_disabled_primary_actions_are_explicit() {
+    let css = embedded_theme_css();
+    let instruction = rule_body(css, ".dialog-instruction {");
+    assert!(instruction.contains("color: #cccccc"));
+    assert!(instruction.contains("font-size: 14px"));
+    assert!(contrast_ratio("#cccccc", "#2b2b2b") >= 4.5);
+    let disabled = rule_body(css, ".content-dialog button.suggested-action:disabled {");
+    assert!(disabled.contains("background: #2b2b2b"));
+    assert!(disabled.contains("color: #9d9d9d"));
+    assert!(!disabled.contains("#60cdff"));
+    assert!(rule_body(css, ".dim-label {").contains("opacity: 1"));
 }

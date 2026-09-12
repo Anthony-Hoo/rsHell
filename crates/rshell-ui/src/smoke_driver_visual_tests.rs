@@ -2,11 +2,69 @@ use std::collections::BTreeSet;
 
 use crate::{
     ShellLayoutMode, SmokeAccessibilityEvidence, SmokeAction, SmokeBindingEvidence, SmokeCounters,
-    SmokeDpiEvidence, SmokePngEvidence, SmokeVisualCheckpoint, SmokeVisualCheckpointEvidence,
-    SmokeVisualFacts, SmokeVisualState,
+    SmokeDpiEvidence, SmokeDriverInit, SmokePngEvidence, SmokeReportHandle, SmokeScenario,
+    SmokeStepState, SmokeVisualCheckpoint, SmokeVisualCheckpointEvidence, SmokeVisualFacts,
+    SmokeVisualState,
     smoke_driver_completion::{CompletionContext, action_is_complete},
     smoke_driver_observation::SmokeObservation,
+    smoke_driver_state::{SmokeDecision, SmokeDriver},
 };
+
+#[test]
+fn captured_modal_cannot_pass_a_deferred_route() {
+    let checkpoint = import_checkpoint();
+    let init = SmokeDriverInit::new(SmokeScenario::new(vec![
+        SmokeAction::VisualCheckpoint(checkpoint.clone()),
+        SmokeAction::CloseAll,
+    ]));
+    let report = SmokeReportHandle::new(&init);
+    let mut driver = SmokeDriver::new(init, report.clone());
+    let mut now = observation(SmokeCounters::default());
+    assert!(matches!(
+        driver.tick(&now, |_| false),
+        Some(SmokeDecision::Route(SmokeAction::VisualCheckpoint(_)))
+    ));
+    driver.defer_current_route();
+
+    let evidence = passing_import_evidence(&checkpoint);
+    assert!(evidence.contract_passes());
+    now.counters
+        .visual
+        .insert(evidence.checkpoint_id.clone(), evidence);
+
+    assert!(matches!(
+        driver.tick(&now, |_| false),
+        Some(SmokeDecision::Route(SmokeAction::VisualCheckpoint(_)))
+    ));
+    assert_eq!(report.report().steps[0].state, SmokeStepState::Running);
+}
+
+#[test]
+fn captured_modal_passes_after_its_final_route() {
+    let checkpoint = import_checkpoint();
+    let init = SmokeDriverInit::new(SmokeScenario::new(vec![
+        SmokeAction::VisualCheckpoint(checkpoint.clone()),
+        SmokeAction::CloseAll,
+    ]));
+    let report = SmokeReportHandle::new(&init);
+    let mut driver = SmokeDriver::new(init, report.clone());
+    let mut now = observation(SmokeCounters::default());
+    assert!(matches!(
+        driver.tick(&now, |_| false),
+        Some(SmokeDecision::Route(SmokeAction::VisualCheckpoint(_)))
+    ));
+
+    let evidence = passing_import_evidence(&checkpoint);
+    now.counters
+        .visual
+        .insert(evidence.checkpoint_id.clone(), evidence);
+
+    assert!(matches!(
+        driver.tick(&now, |_| false),
+        Some(SmokeDecision::Route(SmokeAction::CloseAll))
+    ));
+    assert_eq!(report.report().steps[0].state, SmokeStepState::Passed);
+}
 
 #[test]
 fn visual_checkpoint_uses_exact_persisted_evidence_and_verified_main_window_binding() {
@@ -26,21 +84,13 @@ fn visual_checkpoint_uses_exact_persisted_evidence_and_verified_main_window_bind
         actual_label: Some("main_window".into()),
         ..Default::default()
     });
-    assert!(!action_is_complete(
-        &action,
-        &CompletionContext::new(&before, &observed).require_binding(),
-        |_| false,
-    ));
+    assert!(!visual_is_complete(&action, &before, &observed));
 
     observed
         .counters
         .visual
         .insert("wrong-key".into(), passing_visual_evidence());
-    assert!(!action_is_complete(
-        &action,
-        &CompletionContext::new(&before, &observed).require_binding(),
-        |_| false,
-    ));
+    assert!(!visual_is_complete(&action, &before, &observed));
 
     let mut failing = passing_visual_evidence();
     failing.png.non_empty = false;
@@ -48,11 +98,7 @@ fn visual_checkpoint_uses_exact_persisted_evidence_and_verified_main_window_bind
         .counters
         .visual
         .insert(checkpoint.id.clone(), failing);
-    assert!(!action_is_complete(
-        &action,
-        &CompletionContext::new(&before, &observed).require_binding(),
-        |_| false,
-    ));
+    assert!(!visual_is_complete(&action, &before, &observed));
 
     let mut wrong = passing_visual_evidence();
     wrong.checkpoint_id = "wrong-id".into();
@@ -60,11 +106,7 @@ fn visual_checkpoint_uses_exact_persisted_evidence_and_verified_main_window_bind
         .counters
         .visual
         .insert(checkpoint.id.clone(), wrong);
-    assert!(!action_is_complete(
-        &action,
-        &CompletionContext::new(&before, &observed).require_binding(),
-        |_| false,
-    ));
+    assert!(!visual_is_complete(&action, &before, &observed));
 
     let mut wrong = passing_visual_evidence();
     wrong.state = SmokeVisualState::Empty;
@@ -72,11 +114,7 @@ fn visual_checkpoint_uses_exact_persisted_evidence_and_verified_main_window_bind
         .counters
         .visual
         .insert(checkpoint.id.clone(), wrong);
-    assert!(!action_is_complete(
-        &action,
-        &CompletionContext::new(&before, &observed).require_binding(),
-        |_| false,
-    ));
+    assert!(!visual_is_complete(&action, &before, &observed));
 
     let mut wrong = passing_visual_evidence();
     wrong.layout = ShellLayoutMode::Compact;
@@ -84,22 +122,14 @@ fn visual_checkpoint_uses_exact_persisted_evidence_and_verified_main_window_bind
         .counters
         .visual
         .insert(checkpoint.id.clone(), wrong);
-    assert!(!action_is_complete(
-        &action,
-        &CompletionContext::new(&before, &observed).require_binding(),
-        |_| false,
-    ));
+    assert!(!visual_is_complete(&action, &before, &observed));
 
     observed
         .counters
         .visual
         .insert(checkpoint.id.clone(), passing_visual_evidence());
     observed.binding.as_mut().unwrap().verified = false;
-    assert!(!action_is_complete(
-        &action,
-        &CompletionContext::new(&before, &observed).require_binding(),
-        |_| false,
-    ));
+    assert!(!visual_is_complete(&action, &before, &observed));
 
     observed.binding.as_mut().unwrap().verified = true;
     observed.binding.as_mut().unwrap().component_verified = false;
@@ -110,11 +140,7 @@ fn visual_checkpoint_uses_exact_persisted_evidence_and_verified_main_window_bind
     ));
 
     observed.binding.as_mut().unwrap().component_verified = true;
-    assert!(action_is_complete(
-        &action,
-        &CompletionContext::new(&before, &observed).require_binding(),
-        |_| false,
-    ));
+    assert!(visual_is_complete(&action, &before, &observed));
 }
 
 #[test]
@@ -147,6 +173,40 @@ fn observation(counters: SmokeCounters) -> SmokeObservation {
         binding: None,
         counters,
     }
+}
+
+fn visual_is_complete(
+    action: &SmokeAction,
+    before: &SmokeCounters,
+    observed: &SmokeObservation,
+) -> bool {
+    action_is_complete(
+        action,
+        &CompletionContext::new(before, observed).require_binding(),
+        |_| false,
+    )
+}
+
+fn import_checkpoint() -> SmokeVisualCheckpoint {
+    SmokeVisualCheckpoint {
+        id: "standard-import".into(),
+        state: SmokeVisualState::Import,
+        width: 1_360,
+        height: 860,
+        expected_mode: ShellLayoutMode::Standard,
+    }
+}
+
+fn passing_import_evidence(checkpoint: &SmokeVisualCheckpoint) -> SmokeVisualCheckpointEvidence {
+    let mut evidence = passing_visual_evidence();
+    evidence.checkpoint_id = checkpoint.id.clone();
+    evidence.state = checkpoint.state;
+    evidence.facts.content_dialog = true;
+    evidence.accessibility.background_insensitive = true;
+    evidence.accessibility.focus_contained = true;
+    evidence.accessibility.focus_restored = true;
+    evidence.accessibility.escape_cancelled = true;
+    evidence
 }
 
 pub(crate) fn passing_visual_evidence() -> SmokeVisualCheckpointEvidence {

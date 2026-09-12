@@ -411,6 +411,30 @@ fn visual_contract_uses_native_argb32_range_evidence_and_fatal_gtk_warnings() {
 }
 
 #[test]
+fn visual_contract_accepts_both_26_checkpoint_platform_matrices_and_rejects_corruption() {
+    let output = Command::new("pwsh")
+        .args([
+            "-NoProfile",
+            "-File",
+            "scripts/qa/p0-visual-contract-test.ps1",
+        ])
+        .current_dir(env!("CARGO_MANIFEST_DIR"))
+        .output()
+        .expect("PowerShell must launch the visual contract regression test");
+    assert!(
+        output.status.success(),
+        "visual contract regression failed: {}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stdout).contains(
+            "VISUAL_CONTRACT_SYNTHETIC_PASS platforms=2 checkpoints=26 negative_cases=11"
+        )
+    );
+}
+
+#[test]
 fn embedded_product_assets_and_package_contract_are_closed() {
     let labels = rshell_ui::ProductIcon::ALL
         .into_iter()
@@ -855,6 +879,94 @@ fn local_shell_readiness_uses_real_io_instead_of_a_platform_prompt() {
     assert!(input.contains("split_smoke_terminal_submission"));
     assert!(input.contains("TerminalViewMsg::Key"));
     assert!(input.contains("gdk::Key::Return"));
+}
+
+#[test]
+fn production_actions_empty_bootstrap_before_retaining_local_and_ssh_target_tabs() {
+    let script = include_str!("../scripts/qa/p0-smoke.ps1").replace("\r\n", "\n");
+    let start = script
+        .find("$actions = [System.Collections.Generic.List[object]]::new()")
+        .expect("production action builder");
+    let end = script[start..]
+        .find("Set-ActionBinding -Surface \"cleanup\"")
+        .map(|offset| start + offset)
+        .expect("production cleanup action");
+    let actions = &script[start..end];
+    let position = |needle: &str| {
+        actions
+            .find(needle)
+            .unwrap_or_else(|| panic!("missing production action: {needle}"))
+    };
+
+    let realized = position("action = \"wait_window_realized\"");
+    let compact = position("Add-WindowResize $actions 800 600 \"compact\"");
+    let empty =
+        position("Add-VisualCheckpoint $actions \"compact-empty\" \"empty\" 800 600 \"compact\"");
+    let new_tabs = actions
+        .match_indices("Add-Action $actions ([ordered]@{ action = \"new_tab\" })")
+        .map(|(index, _)| index)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        new_tabs.len(),
+        5,
+        "two baseline, loop body, and two tail actions"
+    );
+    assert!(realized < compact && compact < empty && empty < new_tabs[0]);
+    assert!(
+        actions[empty..new_tabs[0]]
+            .contains("Set-ActionBinding -Surface \"local_terminal\" -Connection \"local\""),
+        "the first post-Empty tab must establish retained local tab 0"
+    );
+
+    let editor = position(
+        "Add-VisualCheckpoint $actions \"standard-editor\" \"editor\" 1360 860 \"standard\"",
+    );
+    let password = position("Add-ConnectionPrefix $actions \"native_password\"");
+    assert!(editor < new_tabs[1] && new_tabs[1] < password);
+    assert!(
+        actions[editor..new_tabs[1]]
+            .contains("Set-ActionBinding -Surface \"local_terminal\" -Connection \"local\""),
+        "the second baseline tab must become disposable SSH target tab 1"
+    );
+
+    assert!(actions.contains("for ($tabIndex = 0; $tabIndex -lt 16; $tabIndex++)"));
+    assert!(new_tabs[2] < new_tabs[3] && new_tabs[3] < new_tabs[4]);
+    assert_eq!(
+        2 + 16 + 2,
+        20,
+        "baseline and later tab additions stay exact"
+    );
+    let switch_zero = position("action = \"switch_tab\"; tab = 0");
+    let switch_nineteen = position("action = \"switch_tab\"; tab = 19");
+    assert!(switch_zero < new_tabs[2] && new_tabs[4] < switch_nineteen);
+    let platform_branch = position("if ($IsWindows) {");
+    let non_windows = actions[platform_branch..]
+        .find("        else {")
+        .map(|offset| platform_branch + offset)
+        .expect("non-Windows visual branch");
+    let platform_tail = actions[non_windows..]
+        .find("Add-ConnectionPrefix $actions \"vault\"")
+        .map(|offset| non_windows + offset)
+        .expect("end of platform visual branch");
+    assert_eq!(
+        actions[..platform_branch]
+            .matches("Add-VisualCheckpoint $actions")
+            .count(),
+        20
+    );
+    assert_eq!(
+        actions[platform_branch..non_windows]
+            .matches("Add-VisualCheckpoint $actions")
+            .count(),
+        6
+    );
+    assert_eq!(
+        actions[non_windows..platform_tail]
+            .matches("Add-VisualCheckpoint $actions")
+            .count(),
+        6
+    );
+    assert_eq!(20 + 6, 26, "each generated platform matrix stays exact");
 }
 
 #[test]

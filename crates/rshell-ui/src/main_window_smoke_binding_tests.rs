@@ -6,9 +6,7 @@ use crate::{
     ConnectionEditorDraftState, EditorTextField, SmokeAction, SmokeConnectionField,
     main_window_smoke_binding::editor_action_matches,
     main_window_smoke_binding_profiles::session_component_is_ready,
-    main_window_smoke_visual::{
-        VisualCheckpointPhase, visual_checkpoint_binding, visual_checkpoint_component_verified,
-    },
+    main_window_smoke_visual::{visual_checkpoint_binding, visual_checkpoint_component_verified},
     smoke_driver_visual_tests::passing_visual_evidence,
 };
 
@@ -74,18 +72,15 @@ fn visual_checkpoint_binding_is_global_verified_main_window_evidence() {
         visuals.get("missing-checkpoint")
     ));
 
-    visuals.insert(current_checkpoint.into(), passing_visual_evidence());
-    for _phase in [
-        VisualCheckpointPhase::Idle,
-        VisualCheckpointPhase::Opening,
-        VisualCheckpointPhase::Observed,
-        VisualCheckpointPhase::Closing,
-        VisualCheckpointPhase::Complete,
-    ] {
-        assert!(visual_checkpoint_component_verified(
-            visuals.get(current_checkpoint)
-        ));
-    }
+    let pending = passing_visual_evidence();
+    assert!(pending.contract_passes());
+    assert!(!visual_checkpoint_component_verified(
+        visuals.get(current_checkpoint)
+    ));
+    visuals.insert(current_checkpoint.into(), pending);
+    assert!(visual_checkpoint_component_verified(
+        visuals.get(current_checkpoint)
+    ));
 
     let binding = visual_checkpoint_binding(Some("gtk"), None, true);
     assert!(binding.verified && binding.component_verified);

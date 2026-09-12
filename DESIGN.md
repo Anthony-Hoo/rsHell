@@ -7,6 +7,10 @@ This document is the current product design authority. It mirrors the approved
 supersedes the Task21-only authority. The existing Task21 widget selectors stay
 valid until their components migrate to the adaptive composition.
 
+For the current Windows UI refinement stage,
+`docs/superpowers/specs/2026-09-09-windows-ui-refinement-design.md` supplements this
+authority and supersedes only the cross-platform acceptance prerequisite.
+
 rsHell remains a native GTK4/Relm4 terminal-first SSH workspace. This authority
 makes no framework or security change: SSH authentication, host-key handling,
 credential storage, journaling, import, reconnect, and secret-redaction
@@ -52,6 +56,7 @@ from opaque Fluent dark tonal layers and boundaries, never floating cards.
 | accent-active | `#4ab5e6` |
 | accent-content | `#002b40` |
 | semantic-error | `#ff99a4` |
+| semantic-warning | `#fce100` |
 | semantic-success | `#6ccb8e` |
 | control-radius | 4px |
 | overlay-radius | 8px |
@@ -114,7 +119,7 @@ existing controllers without recreating reducer or session state.
 | Mode | Width | Navigation and terminal behavior |
 |---|---:|---|
 | Compact | `< 900` | 48px navigation rail; connection drawer; icon global actions; pane-action overflow. |
-| Standard | `900–1439` | 240px resizable sidebar; compact text/icon actions; terminal owns remaining width. |
+| Standard | `900–1439` | 260px resizable sidebar; compact text/icon actions; terminal owns remaining width. |
 | Wide | `>= 1440` | Sidebar may grow to 280px; forms stay capped; terminal receives extra width. |
 
 Crossing a breakpoint preserves the active tab, focused pane, live sessions,
@@ -133,6 +138,15 @@ an accessible overflow list. At least twenty tabs remain keyboard reachable.
 Pane actions use priority groups: split, reconnect/retry, and close remain
 visible where space allows; diagnostics and edit move to pane-action overflow.
 All supported split trees retain non-zero terminal allocations in every mode.
+
+Windows shell actions provide at least 36px outer targets; tab text uses a 36px
+content minimum with two 2px state boundaries (40px outer). Tab close/add retain
+36px usable width, while embedded 16px icons stay centered rather than stretching
+to the button allocation. The Compact rail measures 48px including its boundary
+and inset. Command status is a single-line, selectable ellipsis with the complete
+non-secret text retained in its native tooltip and selection; it must never grow
+the shell or consume the terminal when a multiline operation fails. Full modal
+validation remains in the scrolling form body.
 
 | Surface | Required states |
 |---|---|
@@ -158,6 +172,26 @@ intentional first control, contains Tab order, supports Escape cancel, and
 returns focus to the trigger. Errors remain adjacent to their field or action.
 The controls remain native GTK widgets, not custom-painted form controls.
 
+The connection title inherits the 18px dialog-header hierarchy rather than the
+15px connection-row identity style. Multiline Note fields use `surface-control`
+on both the TextView surround and text node, with the shared 2px accent focus.
+Settings section grids share a horizontal label size group so their input
+columns align without fixed label widths. Operational dialog instructions use
+`content-secondary` at `type-secondary`, without theme dimming; disabled primary
+actions use `surface-control`, `content-tertiary`, and `border-default` rather
+than the enabled accent fill. Native sensitivity remains authoritative.
+
+Windows form controls use a single 36px content minimum with zero vertical
+padding and 2px boundaries: measured outer height is 40px, the next 4px step
+above the former native Entry requisition of 39px. Compound inner buttons do
+not repeat the outer minimum. Body gap is 12px, field row gap 8px, column gap
+12px. The first section has no top inset; subsequent section separation is
+20px (the section selector alone owns the extra inset above the parent's gap).
+Body scrollers and ordinary form groups have no additional frame or card fill.
+The dialog frame, Note surround/focus, footer separator and danger boundary
+remain. Long validation belongs at the end of the scrolling body, never in the
+fixed footer. Multiline content is not subject to single-line height limits.
+
 ## 7. Motion and interaction
 
 - `motion-fast` 80ms covers hover and immediate acknowledgements.
@@ -173,6 +207,8 @@ The controls remain native GTK widgets, not custom-painted form controls.
 Primary operational text must maintain at least 4.5:1 contrast at its rendered
 size; focus treatment and non-text state boundaries maintain at least 3:1.
 Operational labels use explicit foreground tokens rather than 40–50% opacity.
+Native `.dim-label` uses full opacity so ambient theme dimming cannot reduce the
+declared `content-tertiary` contrast (including import candidate metadata).
 Semantic colors are paired with visible text or an accessible name.
 
 Depth is borders-first and tonal. Gradients, drop shadows, fake Mica/acrylic,

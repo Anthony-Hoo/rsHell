@@ -70,8 +70,42 @@ fn task7_modal_host_native_contract() {
             assert_surface_contract(kind)
         });
     }
+    run_case(
+        &mut failures,
+        "valid button exact focus",
+        assert_valid_button_focus_restored_exactly,
+    );
     run_case(&mut failures, "fallback focus", assert_fallback_focus);
+    run_case(
+        &mut failures,
+        "editor workspace fallback focus",
+        assert_editor_workspace_fallback_focus,
+    );
     assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+fn assert_valid_button_focus_restored_exactly() {
+    let (main, _commands, _session) = launch_main();
+    let window = present(&main, 1_360, 860);
+    assert!(flush_gtk());
+    let trigger = button_by_tooltip(main.widget(), "Terminal settings");
+    focus_exactly(&trigger);
+    trigger.emit_clicked();
+    assert!(flush_gtk());
+    let surface = css_child(main.widget(), "settings-window");
+    assert!(press_key(
+        &surface,
+        gtk::gdk::Key::Escape,
+        gtk::gdk::ModifierType::empty()
+    ));
+    assert!(flush_gtk());
+    assert_eq!(
+        gtk::prelude::RootExt::focus(&window).as_ref(),
+        Some(trigger.upcast_ref()),
+        "a valid current-focus button must remain the exact restore target"
+    );
+    window.close();
+    assert!(flush_gtk());
 }
 
 fn assert_editor_overlay() {
@@ -132,6 +166,65 @@ fn assert_fallback_focus() {
     assert!(flush_gtk());
 }
 
+fn assert_editor_workspace_fallback_focus() {
+    assert_editor_workspace_fallback_focus_for("non-focusable terminal", |terminal| {
+        terminal.set_focusable(false);
+    });
+    assert_editor_workspace_fallback_focus_for("hidden terminal", |terminal| {
+        terminal.set_visible(false);
+    });
+}
+
+fn assert_editor_workspace_fallback_focus_for(case: &str, invalidate: impl FnOnce(&gtk::Widget)) {
+    let (main, _commands, _session) = launch_main();
+    let window = present(&main, 900, 600);
+    assert!(flush_gtk());
+
+    let terminal = css_child(main.widget(), "terminal-canvas");
+    invalidate(&terminal);
+    assert!(
+        !terminal.is_mapped() || !terminal.is_focusable(),
+        "{case} must not be a live focus target"
+    );
+    gtk::prelude::RootExt::set_focus(&window, gtk::Widget::NONE);
+    assert!(flush_gtk());
+    assert!(gtk::prelude::RootExt::focus(&window).is_none());
+
+    let workspace = css_child(main.widget(), "pane-host")
+        .parent()
+        .expect("terminal workspace");
+    assert!(workspace.is_mapped());
+    assert!(!workspace.is_focusable());
+
+    main.emit(MainWindowMsg::Sidebar(ConnectionSidebarOutput::OpenCreate(
+        None,
+    )));
+    assert!(flush_gtk());
+    let surface = css_child(main.widget(), "editor-dialog");
+    let background = css_child(main.widget(), "modal-background");
+    assert!(surface.is_mapped());
+    assert!(!background.is_sensitive());
+
+    assert!(press_key(
+        &surface,
+        gtk::gdk::Key::Escape,
+        gtk::gdk::ModifierType::empty()
+    ));
+    assert!(flush_gtk());
+    let focused = gtk::prelude::RootExt::focus(&window);
+    assert!(!surface.is_visible(), "editor must close after Escape");
+    assert!(background.is_sensitive(), "background must be restored");
+    assert!(workspace.is_focusable(), "fallback must accept focus");
+    assert_eq!(
+        focused.as_ref(),
+        Some(&workspace),
+        "editor must restore the exact stable workspace fallback for {case}"
+    );
+
+    window.close();
+    assert!(flush_gtk());
+}
+
 fn run_case(failures: &mut Vec<String>, name: &str, check: impl FnOnce() + std::panic::UnwindSafe) {
     if let Err(error) = std::panic::catch_unwind(check) {
         let detail = error
@@ -149,8 +242,8 @@ fn run_case(failures: &mut Vec<String>, name: &str, check: impl FnOnce() + std::
 
 fn assert_surface_contract(kind: Kind) {
     let (main, commands, session) = launch_main();
-    let window = present(&main, 900, 600);
-    main.emit(MainWindowMsg::Allocated { width: 800 });
+    let window = present(&main, 1_360, 860);
+    main.emit(MainWindowMsg::Allocated { width: 1_360 });
     assert!(flush_gtk());
     let (trigger, interaction) = open(&main, kind, session);
     assert!(flush_gtk());
@@ -334,6 +427,18 @@ fn open(
             (trigger, Some(interaction))
         }
     }
+}
+
+fn focus_exactly(widget: &impl IsA<gtk::Widget>) {
+    assert!(widget.as_ref().grab_focus());
+    assert!(wait_for_gtk(|| {
+        widget
+            .as_ref()
+            .root()
+            .and_then(|root| gtk::prelude::RootExt::focus(&root))
+            .as_ref()
+            == Some(widget.as_ref())
+    }));
 }
 
 fn launch_main() -> (relm4::Controller<MainWindow>, Arc<RecordingPort>, SessionId) {

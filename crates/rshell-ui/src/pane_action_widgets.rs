@@ -101,9 +101,10 @@ pub(crate) fn action_button(
     button.update_property(&[gtk::accessible::Property::Label(label)]);
     let request = IconRenderRequest::for_widget(16, &button);
     if icon_only {
-        button.set_child(Some(
-            &icon.image(request).expect("embedded pane action icon"),
-        ));
+        let image = icon.image(request).expect("embedded pane action icon");
+        image.set_halign(gtk::Align::Center);
+        image.set_valign(gtk::Align::Center);
+        button.set_child(Some(&image));
     } else {
         let content = gtk::Box::new(gtk::Orientation::Horizontal, 4);
         content.append(&icon.image(request).expect("embedded pane action icon"));

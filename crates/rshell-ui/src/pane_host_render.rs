@@ -56,14 +56,25 @@ fn render_leaf(
     let focus = gtk::EventControllerFocus::new();
     let pane_id = pane.pane();
     let input = sender.input_sender().clone();
-    focus.connect_enter(move |_| {
-        let _ = input.send(PaneHostMsg::ActivatePane(pane_id));
+    focus.connect_enter(move |focus| {
+        let focused = focus
+            .widget()
+            .and_then(|w| w.root())
+            .and_then(|root| gtk::prelude::RootExt::focus(&root));
+        if active != Some(pane_id) && focused.as_ref().is_some_and(|w| !is_pane_action(w)) {
+            let _ = input.send(PaneHostMsg::ActivatePane(pane_id));
+        }
     });
     surface.add_controller(focus);
     let click = gtk::GestureClick::new();
     let input = sender.input_sender().clone();
-    click.connect_pressed(move |_, _, _, _| {
-        let _ = input.send(PaneHostMsg::ActivatePane(pane_id));
+    click.connect_pressed(move |click, _, x, y| {
+        let picked = click
+            .widget()
+            .and_then(|w| w.pick(x, y, gtk::PickFlags::DEFAULT));
+        if active != Some(pane_id) && picked.as_ref().is_some_and(|w| !is_pane_action(w)) {
+            let _ = input.send(PaneHostMsg::ActivatePane(pane_id));
+        }
     });
     surface.add_controller(click);
 
@@ -117,6 +128,22 @@ fn recovery_notice(pane: PaneId, sender: &relm4::ComponentSender<PaneHost>) -> g
     notice.append(&label);
     notice.append(&action_button(pane, PaneAction::ResetDisplay, sender, true));
     notice
+}
+
+// Action buttons already carry an explicit pane ID. Rebuilding on their focus
+// would destroy an open More popover before its command can be activated.
+fn is_pane_action(widget: &gtk::Widget) -> bool {
+    let mut current = Some(widget.clone());
+    while let Some(widget) = current {
+        if widget.is::<gtk::Button>()
+            || widget.is::<gtk::MenuButton>()
+            || widget.is::<gtk::Popover>()
+        {
+            return true;
+        }
+        current = widget.parent();
+    }
+    false
 }
 
 fn status_page(label: &str) -> gtk::Box {

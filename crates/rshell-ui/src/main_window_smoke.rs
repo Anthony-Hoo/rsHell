@@ -18,6 +18,9 @@ use crate::{
 };
 use std::collections::BTreeMap;
 
+#[path = "main_window_smoke_empty.rs"]
+pub(crate) mod empty;
+
 #[derive(Default)]
 pub(crate) struct SmokeUiState {
     pub window_realized: bool,
@@ -73,6 +76,7 @@ pub(crate) struct SmokeUiState {
     pub modal_focus_restore_verified: bool,
     pub visual: Option<crate::SmokeVisualEvidence>,
     pub visuals: BTreeMap<String, crate::SmokeVisualCheckpointEvidence>,
+    pub pending_visual: Option<crate::SmokeVisualCheckpointEvidence>,
     pub visual_capture_attempted: bool,
     pub visual_completion_tick_pending: bool,
     pub visual_paintable: Option<gtk::WidgetPaintable>,

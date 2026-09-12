@@ -16,6 +16,112 @@ use rshell_ui::{
     apply_global_css, argb32_native_to_rgba, collect_visual_facts, selection_treatment_surface,
 };
 
+#[allow(dead_code, unused_imports)]
+#[path = "support/fluent_native.rs"]
+mod fluent_native;
+
+#[path = "support/shell_identity.rs"]
+mod shell_identity;
+#[path = "support/shell_matrix.rs"]
+mod shell_matrix;
+#[path = "support/surface_capture.rs"]
+mod surface_capture;
+
+fn assert_long_status_preserves_compact_allocation() {
+    use fluent_native::{capture, close_window, wait_for_frame};
+    use rshell_core::{AppEvent, AppFailure, AppFailureCategory};
+    apply_global_css();
+    let main = MainWindow::builder()
+        .launch(MainWindowInit::new(
+            Arc::new(AcceptingPort),
+            visual_fixture(),
+        ))
+        .detach();
+    main.widget().set_default_size(800, 600);
+    main.widget().present();
+    wait_for_frame(main.widget(), "compact connected", |root| {
+        find_by_css_class(root, "shell-compact").is_some()
+            && find_by_css_class(root, "terminal-canvas").is_some_and(|w| w.height() > 0)
+    });
+    let status = find_by_css_class(main.widget().upcast_ref(), "command-status")
+        .unwrap()
+        .downcast::<gtk::Label>()
+        .unwrap();
+    let terminal = find_by_css_class(main.widget().upcast_ref(), "terminal-canvas").unwrap();
+    let before = (
+        main.widget().width(),
+        main.widget().height(),
+        terminal.height(),
+    );
+    let before_min = status.measure(gtk::Orientation::Vertical, -1);
+    capture(main.widget(), "compact", "shell-status-short");
+    const MESSAGE: &str = concat!(
+        "Validation fixture: review the highlighted fields before saving.\n",
+        "The form must keep every action reachable without hiding this explanation.\n",
+        "Validation fixture: review the highlighted fields before saving.\n",
+        "The form must keep every action reachable without hiding this explanation.\n",
+        "Validation fixture: review the highlighted fields before saving.\n",
+        "The form must keep every action reachable without hiding this explanation.\n",
+        "Validation fixture: review the highlighted fields before saving.\n",
+        "The form must keep every action reachable without hiding this explanation.\n",
+        "Validation fixture: review the highlighted fields before saving.\n",
+        "The form must keep every action reachable without hiding this explanation.\n",
+        "Validation fixture: review the highlighted fields before saving.\n",
+        "The form must keep every action reachable without hiding this explanation.\n",
+        "Validation fixture: review the highlighted fields before saving.\n",
+        "The form must keep every action reachable without hiding this explanation.\n",
+        "Validation fixture: review the highlighted fields before saving.\n",
+        "The form must keep every action reachable without hiding this explanation.\n",
+        "Validation fixture: review the highlighted fields before saving.\n",
+        "The form must keep every action reachable without hiding this explanation.\n",
+        "Validation fixture: review the highlighted fields before saving.\n",
+        "The form must keep every action reachable without hiding this explanation.\n",
+        "Validation fixture: review the highlighted fields before saving.\n",
+        "The form must keep every action reachable without hiding this explanation.\n",
+        "Validation fixture: review the highlighted fields before saving.\n",
+        "The form must keep every action reachable without hiding this explanation.\n",
+        "End of validation fixture.",
+    );
+    main.emit(MainWindowMsg::AppEvent(AppEvent::OperationFailed(
+        AppFailure::fatal(AppFailureCategory::Validation, MESSAGE),
+    )));
+    wait_for_frame(main.widget(), "long shell status painted", |root| {
+        find_by_css_class(root, "command-status")
+            .unwrap()
+            .downcast::<gtk::Label>()
+            .unwrap()
+            .text()
+            .contains("End of validation fixture.")
+    });
+    capture(main.widget(), "compact", "shell-status-long");
+    println!(
+        "SHELL_STATUS before={before:?} after={:?} label_before_min={before_min:?} label_after_min={:?} label_rect={:?} font={} modal=false",
+        (
+            main.widget().width(),
+            main.widget().height(),
+            terminal.height()
+        ),
+        status.measure(gtk::Orientation::Vertical, -1),
+        status.compute_bounds(main.widget()),
+        status.pango_context().font_description().unwrap()
+    );
+    assert_eq!(
+        (main.widget().width(), main.widget().height()),
+        (before.0, before.1),
+        "long status must not grow the requested Compact window"
+    );
+    assert!(
+        terminal.height() >= before.2,
+        "long status must not take terminal area"
+    );
+    assert!(status.text().contains(MESSAGE), "complete status retained");
+    assert_eq!(
+        status.tooltip_text().as_deref(),
+        Some(status.text().as_str())
+    );
+    close_window(main.widget());
+}
+
 fn assert_realized_main_window_satisfies_the_fluent_visual_contract() {
     apply_global_css();
     let main = MainWindow::builder()
@@ -162,6 +268,9 @@ fn breakpoint_crossing_uses_typed_detach_without_gtk_warning() {
     main.widget().close();
     assert!(flush_gtk());
     assert_realized_main_window_satisfies_the_fluent_visual_contract();
+    assert_long_status_preserves_compact_allocation();
+    shell_matrix::run();
+    shell_identity::run();
 }
 
 fn find_by_css_class(root: &gtk::Widget, class: &str) -> Option<gtk::Widget> {

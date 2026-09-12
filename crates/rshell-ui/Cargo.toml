@@ -16,3 +16,18 @@ async-channel = "2.5"
 async-trait = "0.1"
 secrecy = "0.10.3"
 tokio = { version = "1", features = ["macros", "rt", "sync", "time"] }
+
+[[test]]
+name = "checkpoint_lifecycle_native"
+path = "tests/checkpoint_lifecycle_native.rs"
+harness = false
+
+[[test]]
+name = "dynamic_geometry_native"
+path = "tests/dynamic_geometry_native.rs"
+harness = false
+
+[[test]]
+name = "terminal_view_teardown_native"
+path = "tests/terminal_view_teardown_native.rs"
+harness = false

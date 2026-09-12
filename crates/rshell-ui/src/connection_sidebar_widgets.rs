@@ -34,8 +34,8 @@ impl ConnectionSidebarWidgets {
             .build();
         search.add_css_class("connection-search");
         search.update_property(&[gtk::accessible::Property::Label("Search connections")]);
-        search.set_margin_start(6);
-        search.set_margin_end(6);
+        search.set_margin_start(8);
+        search.set_margin_end(8);
         search.connect_search_changed({
             let sender = sender.clone();
             move |entry| sender.input(ConnectionSidebarMsg::Search(entry.text().into()))
@@ -97,8 +97,8 @@ impl ConnectionSidebarWidgets {
         empty.add_css_class("sidebar-empty");
         empty.add_css_class("dim-label");
         empty.set_wrap(true);
-        empty.set_margin_start(10);
-        empty.set_margin_end(10);
+        empty.set_margin_start(12);
+        empty.set_margin_end(12);
         empty.set_visible(false);
         root.append(&empty);
 
@@ -211,6 +211,9 @@ fn action_button(
         label.add_css_class("navigation-action-label");
         content.append(&label);
         button.set_child(Some(&content));
+    } else if let Some(image) = button.child() {
+        image.set_halign(gtk::Align::Center);
+        image.set_valign(gtk::Align::Center);
     }
     button
 }

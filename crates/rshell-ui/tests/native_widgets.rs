@@ -26,12 +26,17 @@ use rshell_ui::{
     TerminalViewMsg, TerminalViewOutput,
 };
 
+#[allow(dead_code, unused_imports)]
+#[path = "support/fluent_native.rs"]
+mod fluent_native;
+#[path = "support/pane_overflow_native.rs"]
+mod pane_overflow_native;
+#[path = "support/surface_capture.rs"]
+mod surface_capture;
+
 #[test]
 fn twenty_tabs_are_keyboard_and_overflow_reachable() {
-    if let Err(error) = gtk::init() {
-        eprintln!("native GTK reducer regression skipped: {error}");
-        return;
-    }
+    gtk::init().expect("native widget proof requires a GTK display");
     assert_twenty_tab_overflow_and_keyboard_reachability();
     assert_terminal_view_native_boundary();
     assert_terminal_geometry_retries_until_typed_acknowledgement();
@@ -191,6 +196,9 @@ fn twenty_tabs_are_keyboard_and_overflow_reachable() {
     assert!(flush_gtk());
     editor.emit(ConnectionEditorMsg::Save);
     assert!(flush_gtk(), "closed Save must be a native no-op");
+    rshell_ui::apply_global_css();
+    assert_twenty_tab_overflow_and_keyboard_reachability();
+    pane_overflow_native::run();
 }
 
 fn assert_twenty_tab_overflow_and_keyboard_reachability() {
@@ -206,6 +214,8 @@ fn assert_twenty_tab_overflow_and_keyboard_reachability() {
         })
         .collect::<Vec<_>>();
     let tab_ids = tabs.iter().map(|tab| tab.id).collect::<Vec<_>>();
+    let outputs = Rc::new(RefCell::new(Vec::new()));
+    let recorded = outputs.clone();
     let tab_bar = SessionTabBar::builder()
         .launch(SessionTabBarInit {
             workspace: WorkspaceState {
@@ -213,7 +223,7 @@ fn assert_twenty_tab_overflow_and_keyboard_reachability() {
                 active_tab: Some(tab_ids[0]),
             },
         })
-        .detach();
+        .connect_receiver(move |_, output| recorded.borrow_mut().push(output));
     let window = gtk::Window::new();
     window.set_default_size(520, 180);
     window.set_child(Some(tab_bar.widget()));
@@ -265,6 +275,23 @@ fn assert_twenty_tab_overflow_and_keyboard_reachability() {
         .filter_map(|widget| widget.downcast::<gtk::Button>().ok())
         .find(|button| button.label().as_deref() == Some("Tab 20"))
         .expect("last authoritative overflow row");
+    overflow_menu.popup();
+    fluent_native::wait_for_frame(&window, "native tab overflow", |root| {
+        descendants(root)
+            .iter()
+            .any(|w| w.has_css_class("tab-overflow-row") && w.is_mapped())
+    });
+    let overflow_scroll = descendants(&overflow_popover)
+        .into_iter()
+        .find_map(|w| w.downcast::<gtk::ScrolledWindow>().ok())
+        .unwrap();
+    let adjustment = overflow_scroll.vadjustment();
+    adjustment.set_value(adjustment.upper() - adjustment.page_size());
+    fluent_native::wait_for_frame(&last_overflow_row, "last overflow row reachable", |_| true);
+    let bounds = last_overflow_row.compute_bounds(&overflow_scroll).unwrap();
+    assert!(
+        bounds.y() >= -1.0 && bounds.y() + bounds.height() <= overflow_scroll.height() as f32 + 1.0
+    );
     last_overflow_row.emit_clicked();
     assert!(flush_gtk());
     assert!(descendants(tab_bar.widget()).into_iter().any(|widget| {
@@ -291,6 +318,13 @@ fn assert_twenty_tab_overflow_and_keyboard_reachability() {
         assert!(flush_gtk());
     }
     assert_eq!(visited.len(), 20);
+    assert!(outputs.borrow().iter().any(
+        |o| matches!(o, rshell_ui::SessionTabBarOutput::ActivateTab(id) if *id == tab_ids[19])
+    ));
+    let close = button_by_tooltip(tab_bar.widget(), "Close Tab 20 tab");
+    close.emit_clicked();
+    assert!(flush_gtk());
+    assert!(outputs.borrow().iter().any(|o| matches!(o, rshell_ui::SessionTabBarOutput::Command(command) if matches!(command.as_ref(), UiCommand::CloseTab(id) if *id == tab_ids[19]))));
     assert!(press_key(
         tab_bar.widget(),
         gtk::gdk::Key::Tab,

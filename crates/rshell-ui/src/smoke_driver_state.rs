@@ -152,7 +152,8 @@ impl SmokeDriver {
                         .get(current.index)
                         .is_some_and(|step| step.surface.is_some()),
                 };
-                action_is_complete(&current.action, &context, &frame_contains)
+                (!matches!(current.action, SmokeAction::VisualCheckpoint(_)) || current.routed)
+                    && action_is_complete(&current.action, &context, &frame_contains)
             };
             if is_complete {
                 let current = self.current.as_ref().expect("current step checked");

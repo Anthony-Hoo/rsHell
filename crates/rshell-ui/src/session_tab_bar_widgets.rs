@@ -55,6 +55,7 @@ impl SessionTabBarWidgets {
             )
             .expect("embedded new-tab icon");
         add.add_css_class("tab-add");
+        center_icon(&add);
         add.connect_clicked(send(sender, SessionTabBarMsg::NewLocalTab));
         row.append(&add);
         root.append(&row);
@@ -142,6 +143,7 @@ impl SessionTabBarWidgets {
             )
             .expect("embedded close-tab icon");
         close.add_css_class("tab-close");
+        center_icon(&close);
         close.connect_clicked(send(sender, SessionTabBarMsg::Close(tab)));
         group.append(&close);
         group
@@ -228,6 +230,13 @@ fn reveal_after_allocation(scroll: &gtk::ScrolledWindow, group: &gtk::Box) {
 fn clear_box(container: &gtk::Box) {
     while let Some(child) = container.first_child() {
         container.remove(&child);
+    }
+}
+
+fn center_icon(button: &gtk::Button) {
+    if let Some(image) = button.child() {
+        image.set_halign(gtk::Align::Center);
+        image.set_valign(gtk::Align::Center);
     }
 }
 

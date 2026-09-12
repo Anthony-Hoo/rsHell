@@ -484,21 +484,21 @@ function Assert-VisualContract {
     )
     if ($IsWindows) {
         $required += @(
-            @("windows-standard-connected", "connected", 1000, 700, "standard")
-            @("windows-standard-twenty-tabs", "twenty_tabs", 1000, 700, "standard")
-            @("windows-standard-grid", "grid", 1000, 700, "standard")
-            @("windows-standard-editor", "editor", 1000, 700, "standard")
-            @("windows-standard-settings", "settings", 1000, 700, "standard")
+            @("windows-standard-connected", "connected", 1000, 700, "standard"),
+            @("windows-standard-twenty-tabs", "twenty_tabs", 1000, 700, "standard"),
+            @("windows-standard-grid", "grid", 1000, 700, "standard"),
+            @("windows-standard-editor", "editor", 1000, 700, "standard"),
+            @("windows-standard-settings", "settings", 1000, 700, "standard"),
             @("windows-standard-import", "import", 1000, 700, "standard")
         )
     }
     else {
         $required += @(
-            @("wide-connected", "connected", 1920, 1080, "wide")
-            @("wide-twenty-tabs", "twenty_tabs", 1920, 1080, "wide")
-            @("wide-grid", "grid", 1920, 1080, "wide")
-            @("wide-editor", "editor", 1920, 1080, "wide")
-            @("wide-settings", "settings", 1920, 1080, "wide")
+            @("wide-connected", "connected", 1920, 1080, "wide"),
+            @("wide-twenty-tabs", "twenty_tabs", 1920, 1080, "wide"),
+            @("wide-grid", "grid", 1920, 1080, "wide"),
+            @("wide-editor", "editor", 1920, 1080, "wide"),
+            @("wide-settings", "settings", 1920, 1080, "wide"),
             @("wide-import", "import", 1920, 1080, "wide")
         )
     }
@@ -519,7 +519,7 @@ function Assert-VisualContract {
         $png = $evidence.png
         $dpi = $evidence.dpi
         $accessibility = $evidence.accessibility
-        $matchingPngs = @($Report.png_paths | Where-Object { [string]$_ -like "*-$id.png" })
+        $matchingPngs = @($Report.png_paths | Where-Object { [string]$_ -ceq "production-p0-report-$id.png" })
         if ($matchingPngs.Count -ne 1) {
             throw "P0 visual checkpoint PNG binding is ambiguous."
         }
@@ -1308,6 +1308,8 @@ try {
         $actions = [System.Collections.Generic.List[object]]::new()
         Set-ActionBinding -Surface "gtk"
         Add-Action $actions ([ordered]@{ action = "wait_window_realized" })
+        Add-WindowResize $actions 800 600 "compact"
+        Add-VisualCheckpoint $actions "compact-empty" "empty" 800 600 "compact"
         Set-ActionBinding -Surface "local_terminal" -Connection "local"
         Add-Action $actions ([ordered]@{ action = "new_tab" })
         Add-Action $actions ([ordered]@{ action = "wait_frame_contains"; text = "P0-LOCAL-READY" })
@@ -1323,8 +1325,6 @@ try {
         Add-Action $actions ([ordered]@{ action = "resize_terminal"; width = 960; height = 640; scale = 1.0 })
         Add-Action $actions ([ordered]@{ action = "wait_frame_contains"; text = "p0-wide-界" })
         Set-ActionBinding -Surface "gtk"
-        Add-WindowResize $actions 800 600 "compact"
-        Add-VisualCheckpoint $actions "compact-empty" "empty" 800 600 "compact"
         Add-WindowResize $actions 1360 860 "standard"
         Set-ActionBinding -Surface "local_terminal" -Connection "local"
         Add-Action $actions ([ordered]@{ action = "send_terminal_text"; text = "& '$quotedTuiFixture'`r" })
@@ -1370,6 +1370,8 @@ try {
         Add-WindowResize $actions 1360 860 "standard"
         Add-VisualCheckpoint $actions "standard-editor" "editor" 1360 860 "standard"
 
+        Set-ActionBinding -Surface "local_terminal" -Connection "local"
+        Add-Action $actions ([ordered]@{ action = "new_tab" })
         Add-ConnectionPrefix $actions "native_password" $ready.endpoints.native_password "native_ssh" "password" "native_password"
         Add-Action $actions ([ordered]@{ action = "set_connection_field"; field = [ordered]@{ kind = "secret_from_env"; env_var = $passwordName } })
         Add-SubmitConnect $actions "native_password"

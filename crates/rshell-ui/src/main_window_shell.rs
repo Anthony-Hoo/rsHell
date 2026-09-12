@@ -36,6 +36,11 @@ impl MainWindowShell {
         let command_status = gtk::Label::new(Some("Ready"));
         command_status.add_css_class("command-status");
         command_status.set_halign(gtk::Align::End);
+        command_status.set_single_line_mode(true);
+        command_status.set_ellipsize(gtk::pango::EllipsizeMode::End);
+        command_status.set_max_width_chars(48);
+        command_status.set_selectable(true);
+        command_status.set_tooltip_text(Some("Ready"));
         let spacer = gtk::Box::new(gtk::Orientation::Horizontal, 0);
         spacer.set_hexpand(true);
         command_bar.append(&spacer);
@@ -64,6 +69,12 @@ impl MainWindowShell {
         drawer_overlay.set_hexpand(true);
         drawer_overlay.set_vexpand(true);
         let navigation = NavigationDrawer::new(sidebar, sender);
+        visit_children(navigation.rail().upcast_ref(), &mut |widget| {
+            if widget.has_css_class("product-icon") {
+                widget.set_halign(gtk::Align::Center);
+                widget.set_valign(gtk::Align::Center);
+            }
+        });
         let navigation_host = gtk::Box::new(gtk::Orientation::Horizontal, 0);
         navigation_host.set_hexpand(true);
         navigation_host.set_vexpand(true);
@@ -179,6 +190,7 @@ impl MainWindowShell {
 
     pub fn set_status(&self, text: &str) {
         self.command_status.set_label(text);
+        self.command_status.set_tooltip_text(Some(text));
     }
 
     pub fn layout(&self) -> ShellLayout {
@@ -212,6 +224,13 @@ impl MainWindowShell {
                 || widget.has_css_class("navigation-action-label")
             {
                 widget.set_visible(visible);
+                if let Some(content) = widget.parent() {
+                    content.set_halign(if visible {
+                        gtk::Align::Fill
+                    } else {
+                        gtk::Align::Center
+                    });
+                }
             }
         });
     }

@@ -45,12 +45,12 @@ impl ConnectionEditorWidgets {
     }
 
     pub(crate) fn build(root: &gtk::Box, sender: &ComponentSender<ConnectionEditor>) -> Self {
+        root.set_spacing(12);
         let header = gtk::Box::new(gtk::Orientation::Horizontal, 8);
         header.add_css_class("dialog-header");
         let title = gtk::Label::new(Some("Connection editor"));
         title.set_hexpand(true);
         title.set_halign(gtk::Align::Start);
-        title.add_css_class("connection-name");
         let close = icon_text_button(
             ProductIcon::CloseTab,
             "Close",
@@ -157,7 +157,7 @@ impl ConnectionEditorWidgets {
         error.set_halign(gtk::Align::Start);
         error.set_wrap(true);
         error.set_selectable(true);
-        root.append(&error);
+        grid.attach(&error, 0, row, 3, 1);
         let actions = gtk::Box::new(gtk::Orientation::Horizontal, 8);
         actions.add_css_class("dialog-footer");
         actions.set_halign(gtk::Align::End);

@@ -75,19 +75,30 @@ impl MainWindow {
     }
 
     fn modal_trigger(&self) -> gtk::Widget {
-        self.shell
+        if let Some(trigger) = self
+            .shell
             .overlay
             .root()
             .and_then(|root| gtk::prelude::RootExt::focus(&root))
+            .filter(|widget| {
+                is_live_focus_target(widget)
+                    && is_same_or_descendant(widget, self.shell.background.upcast_ref())
+            })
             .or_else(|| find_terminal(self.shell.background.upcast_ref()))
-            .unwrap_or_else(|| self.shell.terminal_workspace.clone().upcast())
+        {
+            return trigger;
+        }
+
+        // Modal close must be able to restore the exact stable fallback it records here.
+        self.shell.terminal_workspace.set_focusable(true);
+        self.shell.terminal_workspace.clone().upcast()
     }
 }
 
 fn find_terminal(root: &gtk::Widget) -> Option<gtk::Widget> {
     let mut child = root.first_child();
     while let Some(current) = child {
-        if current.has_css_class("terminal-canvas") {
+        if current.has_css_class("terminal-canvas") && is_live_focus_target(&current) {
             return Some(current);
         }
         if let Some(found) = find_terminal(&current) {
@@ -96,6 +107,21 @@ fn find_terminal(root: &gtk::Widget) -> Option<gtk::Widget> {
         child = current.next_sibling();
     }
     None
+}
+
+fn is_live_focus_target(widget: &gtk::Widget) -> bool {
+    widget.root().is_some() && widget.is_mapped() && widget.is_sensitive() && widget.is_focusable()
+}
+
+fn is_same_or_descendant(widget: &gtk::Widget, ancestor: &gtk::Widget) -> bool {
+    let mut current = Some(widget.clone());
+    while let Some(widget) = current {
+        if widget == *ancestor {
+            return true;
+        }
+        current = widget.parent();
+    }
+    false
 }
 
 impl Drop for MainWindow {

@@ -174,9 +174,9 @@ impl TerminalViewWidgets {
 }
 
 fn connect_search(search: &gtk::SearchEntry, sender: &ComponentSender<TerminalView>) {
-    let sender = sender.clone();
+    let input = sender.input_sender().clone();
     search.connect_search_changed(move |entry| {
-        sender.input(TerminalViewMsg::Search {
+        let _ = input.send(TerminalViewMsg::Search {
             text: entry.text().into(),
             case_sensitive: false,
             regex: false,

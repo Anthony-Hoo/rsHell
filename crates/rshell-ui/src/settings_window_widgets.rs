@@ -32,10 +32,11 @@ impl SettingsWindowWidgets {
         title.add_css_class("dialog-header");
         title.set_halign(gtk::Align::Start);
         root.append(&title);
-        let body = gtk::Box::new(gtk::Orientation::Vertical, 12);
+        // Keep the dialog as the error label's first Box ancestor for rendering.
+        let body = gtk::Grid::builder().row_spacing(12).build();
         body.add_css_class("dialog-body");
 
-        body.append(&section("Application"));
+        body.attach(&section("Application"), 0, 0, 1, 1);
         let app_form = gtk::Grid::builder()
             .column_spacing(12)
             .row_spacing(8)
@@ -45,9 +46,9 @@ impl SettingsWindowWidgets {
         default_profile.add_css_class("modal-focus-first");
         let app_scheme = scheme_dropdown(&app_form, 1, "Default color scheme");
         let app_bindings = entry(&app_form, 2, "Default key bindings");
-        body.append(&app_form);
+        body.attach(&app_form, 0, 1, 1, 1);
 
-        body.append(&section("Active terminal profile"));
+        body.attach(&section("Active terminal profile"), 0, 2, 1, 1);
         let form = gtk::Grid::builder()
             .column_spacing(12)
             .row_spacing(8)
@@ -82,7 +83,8 @@ impl SettingsWindowWidgets {
             toggles.push(toggle);
         }
         let answerback = entry(&form, 17, "Answerback");
-        body.append(&form);
+        body.attach(&form, 0, 3, 1, 1);
+        align_form_labels([&app_form, &form]);
 
         let scroll = gtk::ScrolledWindow::builder()
             .hscrollbar_policy(gtk::PolicyType::Never)
@@ -97,7 +99,7 @@ impl SettingsWindowWidgets {
         error.add_css_class("dialog-error");
         error.set_halign(gtk::Align::Start);
         error.set_wrap(true);
-        root.append(&error);
+        body.attach(&error, 0, 4, 1, 1);
         let actions = gtk::Box::new(gtk::Orientation::Horizontal, 8);
         actions.add_css_class("dialog-footer");
         actions.set_halign(gtk::Align::End);
@@ -159,9 +161,23 @@ fn section(text: &str) -> gtk::Label {
     label
 }
 
+fn align_form_labels(grids: [&gtk::Grid; 2]) {
+    let labels = gtk::SizeGroup::new(gtk::SizeGroupMode::Horizontal);
+    for grid in grids {
+        let mut child = grid.first_child();
+        while let Some(widget) = child {
+            if widget.is::<gtk::Label>() {
+                labels.add_widget(&widget);
+            }
+            child = widget.next_sibling();
+        }
+    }
+}
+
 fn label(grid: &gtk::Grid, row: i32, text: &str) {
     let label = gtk::Label::new(Some(text));
     label.set_halign(gtk::Align::End);
+    label.set_xalign(1.0);
     grid.attach(&label, 0, row, 1, 1);
 }
 

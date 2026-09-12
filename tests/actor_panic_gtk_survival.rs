@@ -14,6 +14,10 @@ use rshell_session::{
 };
 use rshell_ui::{MainWindow, MainWindowInit, MainWindowMsg};
 
+#[cfg(target_os = "windows")]
+#[path = "support/windows_selection.rs"]
+mod windows_selection;
+
 struct PanicFactory;
 
 impl TransportFactory for PanicFactory {
@@ -141,6 +145,8 @@ pub fn run_actor_panic_scenario() {
 #[test]
 fn actor_panic_keeps_realized_main_window_alive() {
     run_actor_panic_scenario();
+    #[cfg(target_os = "windows")]
+    windows_selection::run();
 }
 
 fn flush_gtk() {

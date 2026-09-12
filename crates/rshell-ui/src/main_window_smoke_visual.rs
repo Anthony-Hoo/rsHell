@@ -5,8 +5,10 @@ use crate::{
     MainWindow, SmokeBindingEvidence, SmokeVisualCheckpoint, SmokeVisualCheckpointEvidence,
     SmokeVisualState, collect_accessibility_evidence, collect_visual_facts, dpi_evidence,
     main_window_smoke_capture::capture_widget_png_with_accent,
-    main_window_smoke_matrix::{focus_restored, press_escape},
 };
+
+#[path = "main_window_smoke_visual_lifecycle.rs"]
+mod lifecycle;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) enum VisualCheckpointPhase {
@@ -33,6 +35,14 @@ impl MainWindow {
             self.smoke_state.visual_checkpoint = VisualCheckpointPhase::Idle;
             self.smoke_state.visual_capture_attempted = false;
             self.smoke_state.visual_stage_count = None;
+            self.smoke_state.pending_visual = None;
+            if matches!(
+                checkpoint.state,
+                SmokeVisualState::Editor | SmokeVisualState::Settings | SmokeVisualState::Import
+            ) {
+                self.smoke_state.modal_escape_verified = false;
+                self.smoke_state.modal_focus_restore_verified = false;
+            }
         }
         match self.smoke_state.visual_checkpoint {
             VisualCheckpointPhase::Idle => {
@@ -144,18 +154,25 @@ impl MainWindow {
         accessibility.focus_restored = self.smoke_state.modal_focus_restore_verified;
         accessibility.escape_cancelled = self.smoke_state.modal_escape_verified;
         self.smoke_state.visual = Some(captured);
-        self.smoke_state.visuals.insert(
-            checkpoint.id.clone(),
-            SmokeVisualCheckpointEvidence {
-                checkpoint_id: checkpoint.id.clone(),
-                state: checkpoint.state,
-                layout: checkpoint.expected_mode,
-                facts,
-                png,
-                dpi: dpi_evidence(facts),
-                accessibility,
-            },
-        );
+        let evidence = SmokeVisualCheckpointEvidence {
+            checkpoint_id: checkpoint.id.clone(),
+            state: checkpoint.state,
+            layout: checkpoint.expected_mode,
+            facts,
+            png,
+            dpi: dpi_evidence(facts),
+            accessibility,
+        };
+        if matches!(
+            checkpoint.state,
+            SmokeVisualState::Editor | SmokeVisualState::Settings | SmokeVisualState::Import
+        ) {
+            self.smoke_state.pending_visual = Some(evidence);
+        } else {
+            self.smoke_state
+                .visuals
+                .insert(checkpoint.id.clone(), evidence);
+        }
         if let Some(driver) = &self.smoke {
             driver.record_png_path(path);
         }
@@ -171,60 +188,6 @@ impl MainWindow {
             self.smoke_state.visual_completion_tick_pending = true;
             Ok(true)
         }
-    }
-
-    fn close_visual_checkpoint(
-        &mut self,
-        checkpoint: &SmokeVisualCheckpoint,
-    ) -> Result<bool, &'static str> {
-        if matches!(
-            checkpoint.state,
-            SmokeVisualState::Editor | SmokeVisualState::Settings | SmokeVisualState::Import
-        ) {
-            let surface = self
-                .smoke_checkpoint_surface(checkpoint.state)
-                .ok_or("visual_modal_unavailable")?;
-            if !press_escape(&surface) {
-                return Err("visual_escape_not_handled");
-            }
-            self.smoke_state.modal_escape_verified = true;
-            self.smoke_state.visual_checkpoint = VisualCheckpointPhase::Closing;
-            Ok(false)
-        } else {
-            self.smoke_state.visual_checkpoint = VisualCheckpointPhase::Complete;
-            Ok(true)
-        }
-    }
-
-    fn finish_visual_checkpoint(
-        &mut self,
-        checkpoint: &SmokeVisualCheckpoint,
-    ) -> Result<bool, &'static str> {
-        if self
-            .smoke_checkpoint_surface(checkpoint.state)
-            .is_some_and(|surface| surface.is_visible())
-        {
-            return Ok(false);
-        }
-        let root = self.smoke_root()?;
-        self.smoke_state.modal_focus_restore_verified = focus_restored(
-            root.upcast_ref(),
-            self.smoke_state.visual_focus_trigger.as_ref(),
-        );
-        if !self.smoke_state.modal_focus_restore_verified {
-            return Ok(false);
-        }
-        let Some(evidence) = self.smoke_state.visuals.get_mut(&checkpoint.id) else {
-            return Err("visual_evidence_missing");
-        };
-        evidence.accessibility.focus_restored = self.smoke_state.modal_focus_restore_verified;
-        evidence.accessibility.escape_cancelled = self.smoke_state.modal_escape_verified;
-        if !evidence.contract_passes() {
-            return Err("visual_checkpoint_incomplete");
-        }
-        self.smoke_state.visual_checkpoint = VisualCheckpointPhase::Complete;
-        self.smoke_state.visual_completion_tick_pending = true;
-        Ok(true)
     }
 }
 

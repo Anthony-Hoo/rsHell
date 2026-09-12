@@ -7,6 +7,9 @@ use crate::{
     interaction_dialog_widgets::InteractionDialogWidgets,
 };
 
+#[path = "interaction_dialog_focus.rs"]
+mod focus;
+
 pub fn render_interaction(
     model: &InteractionDialog,
     root: &gtk::Box,
@@ -83,8 +86,9 @@ pub fn render_interaction(
         {
             first.grab_focus();
             let frame_focus = first.clone();
-            root.add_tick_callback(move |_, _| {
+            root.add_tick_callback(move |_, clock| {
                 frame_focus.grab_focus();
+                focus::reveal_after_paint(&frame_focus, clock);
                 gtk::glib::ControlFlow::Break
             });
             gtk::glib::idle_add_local_once(move || {
@@ -109,6 +113,10 @@ fn add_prompt(
 ) {
     let label = gtk::Label::new(Some(&prompt.label));
     label.set_halign(gtk::Align::Start);
+    label.set_hexpand(true);
+    label.set_wrap(true);
+    label.set_wrap_mode(gtk::pango::WrapMode::WordChar);
+    label.set_xalign(0.0);
     container.append(&label);
     if prompt.echo {
         let entry = gtk::Entry::new();
@@ -147,7 +155,7 @@ fn action_button(action: InteractionAction) -> gtk::Button {
         InteractionAction::Cancel => ("Cancel", ProductIcon::CloseTab),
     };
     let button = gtk::Button::new();
-    let content = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+    let content = gtk::Box::new(gtk::Orientation::Horizontal, 8);
     content.append(
         &icon
             .image(IconRenderRequest::for_widget(16, &button))

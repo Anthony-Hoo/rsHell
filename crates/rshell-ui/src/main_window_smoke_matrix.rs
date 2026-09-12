@@ -3,9 +3,13 @@ use relm4::{ComponentController, gtk};
 use rshell_core::{PaneTree, SessionState, SplitAxis};
 
 use crate::{
-    ConnectionSidebarMsg, MainWindow, ModalKind, PaneAction, SessionTabBarMsg,
-    SmokeVisualCheckpoint, SmokeVisualState,
+    ConnectionSidebarMsg, MainWindow, ModalKind, PaneAction, PaneHostMsg, SessionTabBarMsg,
+    SmokeVisualCheckpoint, SmokeVisualState, main_window_smoke::empty::modal_visual_state,
 };
+
+#[path = "main_window_smoke_grid.rs"]
+mod grid;
+use grid::{is_grid, next_grid_split};
 
 impl MainWindow {
     pub(crate) fn begin_smoke_checkpoint(&mut self, checkpoint: &SmokeVisualCheckpoint) {
@@ -15,6 +19,7 @@ impl MainWindow {
             .root()
             .and_then(|root| gtk::prelude::RootExt::focus(&root));
         match checkpoint.state {
+            SmokeVisualState::Empty => self.begin_empty_smoke_checkpoint(),
             SmokeVisualState::Editor => {
                 self.send_sidebar(ConnectionSidebarMsg::CreateConnection);
             }
@@ -31,6 +36,9 @@ impl MainWindow {
         &mut self,
         state: SmokeVisualState,
     ) -> Result<bool, &'static str> {
+        if !modal_visual_state(state) && self.smoke_modal_surface_open() {
+            return Ok(false);
+        }
         if matches!(
             state,
             SmokeVisualState::Single
@@ -56,13 +64,17 @@ impl MainWindow {
         if state != SmokeVisualState::TwentyTabs {
             self.smoke_state.visual_stage_count = None;
         }
-        Ok(self.smoke_checkpoint_ready(state))
+        let ready = self.smoke_checkpoint_ready(state);
+        if ready && state == SmokeVisualState::Empty {
+            return Ok(self.prepare_empty_smoke_focus());
+        }
+        Ok(ready)
     }
 
     fn smoke_checkpoint_ready(&self, state: SmokeVisualState) -> bool {
         let active = self.view_model.workspace.active_tab();
         match state {
-            SmokeVisualState::Empty => self.view_model.catalog.connections.is_empty(),
+            SmokeVisualState::Empty => self.empty_smoke_checkpoint_ready(),
             SmokeVisualState::Connected => self
                 .view_model
                 .session_states
@@ -79,7 +91,7 @@ impl MainWindow {
             SmokeVisualState::TopBottom3 => active.is_some_and(|tab| {
                 tab.pane_tree.pane_ids().len() == 3 && nested_axes(&tab.pane_tree)
             }),
-            SmokeVisualState::Grid => active.is_some_and(|tab| tab.pane_tree.pane_ids().len() >= 4),
+            SmokeVisualState::Grid => active.is_some_and(|tab| is_grid(&tab.pane_tree)),
             SmokeVisualState::Editor => {
                 self.smoke_state.editor_open && self.editor.widget().is_mapped()
             }
@@ -131,7 +143,7 @@ impl MainWindow {
                 root_split(&active.pane_tree) == Some((SplitAxis::Vertical, 2))
             }
             SmokeVisualState::TopBottom3 => count == 3 && nested_axes(&active.pane_tree),
-            SmokeVisualState::Grid => count == 4,
+            SmokeVisualState::Grid => is_grid(&active.pane_tree),
             _ => unreachable!("pane shape filtered"),
         };
         if ready {
@@ -142,13 +154,24 @@ impl MainWindow {
             return Ok(false);
         }
         self.smoke_state.visual_stage_count = Some(count);
+        if state == SmokeVisualState::Grid {
+            if let Some((pane, axis)) = next_grid_split(&active.pane_tree) {
+                let action = match axis {
+                    SplitAxis::Horizontal => PaneAction::SplitHorizontal,
+                    SplitAxis::Vertical => PaneAction::SplitVertical,
+                };
+                self.send_pane(PaneHostMsg::ActivatePane(pane));
+                self.send_pane(PaneHostMsg::Action { pane, action });
+            } else {
+                self.send_active_pane_action(PaneAction::Close)?;
+            }
+            return Ok(false);
+        }
         let action = match (state, count) {
             (SmokeVisualState::HSplit, 1) => Some(PaneAction::SplitHorizontal),
             (SmokeVisualState::VSplit, 1) => Some(PaneAction::SplitVertical),
             (SmokeVisualState::TopBottom3, 1) => Some(PaneAction::SplitVertical),
             (SmokeVisualState::TopBottom3, 2) => Some(PaneAction::SplitHorizontal),
-            (SmokeVisualState::Grid, 1 | 3) => Some(PaneAction::SplitHorizontal),
-            (SmokeVisualState::Grid, 2) => Some(PaneAction::SplitVertical),
             (_, 2..) => Some(PaneAction::Close),
             _ => None,
         };

@@ -143,11 +143,13 @@ pub fn collect_visual_facts(root: &gtk::Widget, requested: (i32, i32)) -> SmokeV
         .find(|widget| widget.has_css_class("terminal-canvas"))
         .and_then(metric_facts)
         .or_else(|| measured_root_metrics(root));
-    let focus_or_selection_treatment = widgets.iter().filter(visible).any(|widget| {
+    let selected_surface = widgets.iter().filter(visible).any(|widget| {
         ["active-tab", "active-pane", "navigation-selected"]
             .into_iter()
             .any(|class| widget.has_css_class(class))
     });
+    let focus_or_selection_treatment =
+        selected_surface || focused_empty_command_button(root, &widgets).is_some();
     SmokeVisualFacts {
         requested_width: requested.0,
         requested_height: requested.1,
@@ -180,15 +182,64 @@ pub fn collect_visual_facts(root: &gtk::Widget, requested: (i32, i32)) -> SmokeV
 }
 
 pub fn selection_treatment_surface(root: &gtk::Widget) -> Option<gtk::Widget> {
-    let active_tab = descendants_including(root)
-        .into_iter()
-        .find(|widget| widget.is_mapped() && widget.has_css_class("active-tab"))?;
-    let mut current = active_tab.parent();
+    let widgets = descendants_including(root);
+    if let Some(active_tab) = widgets
+        .iter()
+        .find(|widget| widget.is_mapped() && widget.has_css_class("active-tab"))
+        .cloned()
+    {
+        let mut current = active_tab.parent();
+        while let Some(widget) = current {
+            if widget.is_mapped() && widget.has_css_class("tab-bar") {
+                return Some(widget);
+            }
+            current = widget.parent();
+        }
+    }
+    focused_empty_command_button(root, &widgets).and_then(|button| button.parent())
+}
+
+fn focused_empty_command_button(
+    root: &gtk::Widget,
+    widgets: &[gtk::Widget],
+) -> Option<gtk::Widget> {
+    let mapped = |widget: &&gtk::Widget| widget.is_mapped();
+    if widgets.iter().filter(mapped).any(|widget| {
+        widget.has_css_class("terminal-canvas")
+            || ["active-tab", "active-pane", "navigation-selected"]
+                .into_iter()
+                .any(|class| widget.has_css_class(class))
+    }) {
+        return None;
+    }
+    let focused = root
+        .root()
+        .and_then(|root| gtk::prelude::RootExt::focus(&root))?;
+    let mut current = Some(focused);
     while let Some(widget) = current {
-        if widget.is_mapped() && widget.has_css_class("tab-bar") {
-            return Some(widget);
+        if let Ok(button) = widget.clone().downcast::<gtk::Button>()
+            && button.is_mapped()
+            && button.width() > 0
+            && button.height() > 0
+            && button.is_sensitive()
+            && button.is_focusable()
+            && button.has_focus()
+            && has_ancestor_class(button.upcast_ref(), "command-bar")
+        {
+            return Some(button.upcast());
         }
         current = widget.parent();
     }
     None
+}
+
+fn has_ancestor_class(widget: &gtk::Widget, class: &str) -> bool {
+    let mut current = widget.parent();
+    while let Some(widget) = current {
+        if widget.has_css_class(class) {
+            return true;
+        }
+        current = widget.parent();
+    }
+    false
 }

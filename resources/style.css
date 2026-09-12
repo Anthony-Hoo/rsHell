@@ -1,12 +1,18 @@
 /* rsHell — Terminal recovery authority */
 /* Opaque Windows Terminal Dark / Fluent 2 presentation. */
 
+@define-color rshell_error #ff99a4;
+@define-color rshell_warning #fce100;
+@define-color rshell_success #6ccb8e;
+
 window,
 .fluent-shell,
 .command-bar,
 .sidebar,
 .editor-dialog,
-.content-dialog {
+.content-dialog,
+popover.tab-overflow,
+popover.pane-action-overflow {
     background: #202020;
     color: #f5f5f5;
     font-family: "Segoe UI Variable Text", "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
@@ -61,7 +67,7 @@ headerbar button {
 .command-bar button {
     min-height: 36px;
     min-width: 36px;
-    padding: 4px 12px;
+    padding: 0 12px;
     border-radius: 4px;
     font-size: 15px;
     transition: background 100ms ease;
@@ -84,6 +90,7 @@ headerbar button {
 }
 
 .command-bar button:focus,
+.command-status:focus,
 .sidebar button:focus,
 .connection-list row:focus,
 .tab-button:focus,
@@ -149,7 +156,7 @@ headerbar button {
 }
 
 .connection-list row {
-    padding: 4px 6px;
+    padding: 4px;
     border-radius: 4px;
     transition: background 80ms ease;
 }
@@ -165,7 +172,7 @@ headerbar button {
 }
 
 .connection-row {
-    padding: 10px 8px;
+    padding: 8px;
     border-radius: 4px;
 }
 
@@ -195,8 +202,8 @@ headerbar button {
 }
 
 .editor-group {
-    background: #252525;
-    padding: 16px;
+    background: transparent;
+    padding: 0;
 }
 
 .editor-dialog notebook {
@@ -209,7 +216,10 @@ headerbar button {
     background: transparent;
 }
 
-.editor-dialog scrolledwindow {
+.editor-dialog scrolledwindow,
+.settings-window scrolledwindow,
+.import-dialog scrolledwindow,
+.interaction-dialog scrolledwindow {
     border: none;
     border-radius: 0;
 }
@@ -217,7 +227,7 @@ headerbar button {
 .editor-group label {
     color: #cccccc;
     font-size: 15px;
-    margin-top: 12px;
+    margin-top: 0;
 }
 
 /* ── Global entry/spinbutton/password styling ────── */
@@ -228,7 +238,8 @@ passwordentry {
     border-radius: 4px;
     font-size: 15px;
     color: #f5f5f5;
-    border: 1px solid rgba(255, 255, 255, 0.16);
+    padding: 0 12px;
+    border: 2px solid rgba(255, 255, 255, 0.16);
     border-bottom: 2px solid rgba(255, 255, 255, 0.24);
     background: #2b2b2b;
     transition: border-color 120ms ease;
@@ -277,34 +288,62 @@ passwordentry:disabled {
 .editor-dialog button.suggested-action,
 .editor-dialog .connect-button {
     min-height: 36px;
-    padding: 4px 20px;
+    padding: 0 16px;
     font-size: 15px;
 }
 
 .editor-dialog button {
-    min-height: 34px;
-    padding: 4px 14px;
+    min-height: 36px;
+    padding: 0 12px;
     border-radius: 4px;
     font-size: 15px;
     background: #333333;
     color: #f5f5f5;
-    border: 1px solid rgba(255, 255, 255, 0.12);
+    border: 2px solid rgba(255, 255, 255, 0.12);
 }
 
 /* ── Drop Down (theme selector etc.) ─────────────── */
 dropdown {
     min-height: 36px;
+    padding: 0;
     color: #f5f5f5;
-    border: 1px solid rgba(255, 255, 255, 0.16);
+    border: 2px solid rgba(255, 255, 255, 0.16);
     border-bottom: 2px solid rgba(255, 255, 255, 0.24);
     border-radius: 4px;
     background: #2b2b2b;
 }
 
-dropdown button {
+dropdown button,
+.content-dialog dropdown > button {
+    min-height: 0;
+    padding: 0 12px;
     background: #2b2b2b;
     color: #f5f5f5;
     border: none;
+}
+
+/* Only the outer compound owns the control height and boundary. */
+.content-dialog spinbutton {
+    padding: 0;
+}
+
+.content-dialog spinbutton > text {
+    padding: 0 12px;
+}
+
+.content-dialog spinbutton > button {
+    min-height: 0;
+    min-width: 24px;
+    padding: 0 8px;
+    border: none;
+}
+
+.content-dialog entry:focus-within,
+.content-dialog passwordentry:focus-within,
+.content-dialog spinbutton:focus-within,
+.content-dialog dropdown:focus-within {
+    outline: 2px solid #60cdff;
+    outline-offset: -2px;
 }
 
 dropdown:focus {
@@ -369,6 +408,18 @@ textview text {
     color: #f5f5f5;
 }
 
+.editor-dialog textview {
+    background: #2b2b2b;
+    color: #f5f5f5;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    border-radius: 4px;
+}
+
+.editor-dialog textview:focus {
+    outline: 2px solid #60cdff;
+    outline-offset: -2px;
+}
+
 /* ── ScrolledWindow border inside editors ────────── */
 scrolledwindow {
     border: 1px solid rgba(255, 255, 255, 0.16);
@@ -403,7 +454,7 @@ paned > separator:hover {
 /* ── Tab Bar (always dark) ───────────────────────── */
 .tab-bar {
     background: #1e1e1e;
-    padding: 0 2px;
+    padding: 0;
     border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 }
 
@@ -411,12 +462,13 @@ paned > separator:hover {
     background: transparent;
     color: #9d9d9d;
     border-radius: 0;
-    padding: 6px 14px;
+    padding: 0 12px;
     font-size: 15px;
     border: none;
     min-height: 36px;
     margin: 0 0;
     border-bottom: 2px solid transparent;
+    border-top: 2px solid transparent;
     transition: color 100ms ease, border-color 120ms ease, background 100ms ease;
 }
 
@@ -440,10 +492,11 @@ paned > separator:hover {
     background: transparent;
     color: #9d9d9d;
     border-radius: 4px;
-    padding: 2px 8px;
-    min-height: 22px;
+    padding: 0;
+    min-height: 36px;
+    min-width: 36px;
     border: none;
-    margin: 2px 2px;
+    margin: 0;
     transition: background 100ms ease, color 100ms ease;
 }
 
@@ -454,12 +507,12 @@ paned > separator:hover {
 
 .tab-close {
     background: transparent;
-    color: #6e6e6e;
+    color: #9d9d9d;
     border: none;
     border-radius: 4px;
-    padding: 0 3px;
-    min-height: 16px;
-    min-width: 16px;
+    padding: 0;
+    min-height: 36px;
+    min-width: 36px;
     font-size: 14px;
     transition: background 80ms ease, color 80ms ease;
 }
@@ -493,9 +546,9 @@ paned > separator:hover {
 .pane-command-row button,
 .pane-toolbar button,
 .pane-error-actions button {
-    min-height: 32px;
+    min-height: 36px;
     min-width: 32px;
-    padding: 4px 8px;
+    padding: 0 8px;
     border-radius: 4px;
     transition: background 100ms ease, color 100ms ease;
     background: transparent;
@@ -570,6 +623,7 @@ paned > separator:hover {
 /* ── Placeholder ─────────────────────────────────── */
 .dim-label {
     color: #9d9d9d;
+    opacity: 1;
 }
 
 /* ── Grid labels in dialogs ──────────────────────── */
@@ -607,7 +661,7 @@ paned > separator:hover {
     color: #f5f5f5;
     font-size: 18px;
     font-weight: 600;
-    padding-bottom: 12px;
+    padding-bottom: 0;
 }
 
 .dialog-body {
@@ -615,12 +669,29 @@ paned > separator:hover {
     font-size: 15px;
 }
 
+.dialog-instruction {
+    color: #cccccc;
+    font-size: 14px;
+}
+
 .dialog-section {
     color: #cccccc;
     font-size: 15px;
     font-weight: 700;
-    padding-top: 20px;
-    padding-bottom: 8px;
+    padding-top: 8px;
+    padding-bottom: 0;
+}
+
+.editor-group > .dialog-section {
+    padding-top: 12px;
+}
+
+.dialog-section:first-child {
+    padding-top: 0;
+}
+
+.editor-group > .dialog-section:first-child {
+    padding-top: 0;
 }
 
 .dialog-footer {
@@ -628,8 +699,8 @@ paned > separator:hover {
     border-top: 1px solid rgba(255, 255, 255, 0.10);
 }
 
-.dialog-error {
-    color: #ff99a4;
+.content-dialog .dialog-error {
+    color: @rshell_error;
     padding: 4px 0;
 }
 
@@ -641,7 +712,7 @@ paned > separator:hover {
 .settings-window .settings-error,
 .import-dialog .import-error,
 .interaction-dialog .interaction-error {
-    color: @error_color;
+    color: @rshell_error;
     padding: 4px 0;
 }
 
@@ -663,17 +734,17 @@ paned > separator:hover {
 
 .import-warnings .warning,
 .interaction-dialog .danger {
-    color: @warning_color;
+    color: @rshell_warning;
 }
 
 .interaction-dialog .danger {
-    background: alpha(@error_color, 0.08);
-    border-left: 2px solid @error_color;
+    background: alpha(@rshell_error, 0.08);
+    border-left: 2px solid @rshell_error;
     padding: 8px;
 }
 
 .import-result {
-    color: @success_color;
+    color: @rshell_success;
     font-weight: 600;
 }
 
@@ -681,19 +752,26 @@ paned > separator:hover {
 .import-dialog button,
 .interaction-dialog button {
     min-height: 36px;
-    padding: 6px 14px;
+    padding: 0 12px;
     font-size: 15px;
     border-radius: 4px;
     transition: background 100ms ease;
     background: #333333;
     color: #f5f5f5;
-    border: 1px solid rgba(255, 255, 255, 0.12);
+    border: 2px solid rgba(255, 255, 255, 0.12);
 }
 
 .content-dialog button.suggested-action {
     background: #60cdff;
     color: #002b40;
     border-color: #60cdff;
+}
+
+.content-dialog button:disabled,
+.content-dialog button.suggested-action:disabled {
+    background: #2b2b2b;
+    color: #9d9d9d;
+    border-color: rgba(255, 255, 255, 0.10);
 }
 
 .content-dialog button.destructive-action {
@@ -732,7 +810,7 @@ paned > separator:hover {
 }
 
 .compact-nav-rail {
-    min-width: 48px;
+    min-width: 36px;
     padding: 4px;
     background: #202020;
     color: #f5f5f5;
@@ -740,7 +818,7 @@ paned > separator:hover {
 }
 
 .compact-nav-rail button {
-    min-width: 38px;
+    min-width: 32px;
 }
 
 .navigation-drawer {
@@ -761,18 +839,54 @@ paned > separator:hover {
     color: #f5f5f5;
 }
 
+/* The trigger owns a single hit target; only the popup gets an outer inset. */
+menubutton.tab-overflow,
+menubutton.pane-action-overflow {
+    padding: 0;
+}
+
+popover.tab-overflow > contents,
+popover.pane-action-overflow > contents {
+    background: #2b2b2b;
+    color: #f5f5f5;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    border-radius: 8px;
+    padding: 4px;
+}
+
+popover.tab-overflow > arrow,
+popover.pane-action-overflow > arrow {
+    background: #2b2b2b;
+    border-color: rgba(255, 255, 255, 0.16);
+}
+
+popover.tab-overflow scrolledwindow {
+    border: none;
+}
+
 .display-recovery-notice button,
 .compact-nav-rail button,
 .tab-overflow button,
 .pane-action-overflow button {
-    min-height: 24px;
-    min-width: 24px;
-    padding: 4px 8px;
+    min-height: 32px;
+    min-width: 32px;
+    padding: 0 8px;
     background: #2b2b2b;
     color: #f5f5f5;
     border: 2px solid transparent;
     border-radius: 4px;
     transition: background 100ms ease, color 100ms ease, border-color 120ms ease;
+}
+
+.shell-compact .command-bar button,
+.compact-nav-rail button {
+    padding-left: 0;
+    padding-right: 0;
+}
+
+.tab-overflow-row,
+.pane-action-overflow-row {
+    font-size: 15px;
 }
 
 .display-recovery-notice button:hover,

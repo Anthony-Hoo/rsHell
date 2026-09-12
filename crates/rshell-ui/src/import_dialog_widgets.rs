@@ -41,7 +41,8 @@ impl ImportDialogWidgets {
         body.append(&section("Preview"));
         let source = gtk::Label::new(None);
         source.set_halign(gtk::Align::Start);
-        source.add_css_class("dim-label");
+        source.set_wrap(true);
+        source.add_css_class("dialog-instruction");
         body.append(&source);
         let groups = gtk::Label::new(None);
         groups.set_halign(gtk::Align::Start);
@@ -57,6 +58,7 @@ impl ImportDialogWidgets {
         body.append(&section("Result"));
         let result = gtk::Label::new(None);
         result.set_halign(gtk::Align::Start);
+        result.set_wrap(true);
         result.add_css_class("import-result");
         body.append(&result);
         let scroll = gtk::ScrolledWindow::builder()
@@ -71,7 +73,7 @@ impl ImportDialogWidgets {
         error.set_wrap(true);
         error.add_css_class("import-error");
         error.add_css_class("dialog-error");
-        root.append(&error);
+        body.append(&error);
 
         let actions = gtk::Box::new(gtk::Orientation::Horizontal, 8);
         actions.add_css_class("dialog-footer");
