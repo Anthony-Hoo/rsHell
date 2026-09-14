@@ -77,6 +77,29 @@ fn profile_and_settings_json_round_trip_all_versioned_fields() {
 }
 
 #[test]
+fn reopening_preserves_explicit_old_default_font_instead_of_reseeding_it() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("font-profile.sqlite3");
+    let repository = SqliteRepository::open(&path).unwrap();
+    repository.migrate().unwrap();
+    let saved = TerminalProfile {
+        settings: TerminalSettingsV1 {
+            font_family: "Cascadia Mono".into(),
+            font_size: 15.0,
+            ..TerminalSettingsV1::default()
+        },
+        ..TerminalProfile::default()
+    };
+    repository.save_terminal_profile(saved.clone()).unwrap();
+    repository.shutdown().unwrap();
+
+    let reopened = SqliteRepository::open(&path).unwrap();
+    reopened.migrate().unwrap();
+    assert_eq!(reopened.load_terminal_profiles().unwrap(), vec![saved]);
+    reopened.shutdown().unwrap();
+}
+
+#[test]
 fn file_database_uses_required_pragmas_and_private_permissions() {
     let temp = tempfile::tempdir().unwrap();
     let path = temp.path().join("nested").join("catalog.sqlite3");

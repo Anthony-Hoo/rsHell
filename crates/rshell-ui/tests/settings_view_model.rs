@@ -57,6 +57,27 @@ fn settings_stay_dirty_until_the_matching_authoritative_event_and_failure_preser
 }
 
 #[test]
+fn terminal_font_edits_save_exactly_and_survive_authoritative_profile_refresh() {
+    let profile = TerminalProfile::default();
+    let mut vm = SettingsViewModel::new(AppSettings::default(), vec![profile]);
+    let settings = &mut vm.active_profile_mut().unwrap().settings;
+    settings.font_family = "Consolas".into();
+    settings.font_size = 18.5;
+
+    let UiCommand::SaveTerminalProfile(saved) = vm.save_profile_command().unwrap() else {
+        panic!("font edits must save the terminal profile");
+    };
+    assert_eq!(saved.settings.font_family, "Consolas");
+    assert_eq!(saved.settings.font_size, 18.5);
+    assert!(vm.pending());
+    assert!(vm.profile_dirty());
+    vm.accept_profiles(vec![saved.clone()]);
+    assert_eq!(vm.active_profile(), Some(&saved));
+    assert!(!vm.pending());
+    assert!(!vm.profile_dirty());
+}
+
+#[test]
 fn settings_ui_rejects_blank_range_nonfinite_and_unknown_default_before_command() {
     let profile = TerminalProfile::default();
     let mut vm = SettingsViewModel::new(AppSettings::default(), vec![profile]);

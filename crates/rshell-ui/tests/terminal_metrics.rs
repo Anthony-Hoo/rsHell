@@ -301,7 +301,6 @@ fn unavailable_requested_family_keeps_its_size_in_a_monospace_fallback() {
     let context = native_context();
     let profile = TerminalSettingsV1 {
         font_family: "Rshell Definitely Unavailable Terminal Face".into(),
-        font_size: 15.0,
         ..TerminalSettingsV1::default()
     }
     .resolve(&TerminalOverrides::default());
@@ -327,7 +326,7 @@ fn unavailable_requested_family_keeps_its_size_in_a_monospace_fallback() {
         );
         assert_eq!(
             measured.font_description.size(),
-            (15.0 * pango::SCALE as f32) as i32
+            (profile.font_size * pango::SCALE as f32) as i32
         );
         assert!(measured.minimum_line_separation >= rshell_ui::TERMINAL_LINE_SPACING);
         let geometry = TerminalGeometryInput {
@@ -391,7 +390,8 @@ fn native_ascii_combining_cjk_and_emoji_stay_on_protocol_grid_identity() {
 fn default_terminal_face_is_scale_stable_and_occupies_its_grid() {
     let context = native_context();
     let profile = TerminalSettingsV1::default().resolve(&TerminalOverrides::default());
-    assert_eq!(profile.font_family, "Cascadia Mono");
+    assert_eq!(profile.font_family, "CaskaydiaCove NF Mono");
+    assert_eq!(profile.font_size, 18.0);
     let mut measured_metrics = Vec::new();
     for (scale, dpi) in [(1.0, 96.0), (2.0, 192.0)] {
         let measured = changed(
@@ -425,7 +425,7 @@ fn default_terminal_face_is_scale_stable_and_occupies_its_grid() {
         } else {
             assert_eq!(
                 measured.font_description.family().as_deref(),
-                Some("Cascadia Mono")
+                Some(profile.font_family.as_str())
             );
         }
         measured_metrics.push(measured.metrics);
@@ -438,6 +438,73 @@ fn native_context() -> pango::Context {
     let context = pango::Context::new();
     context.set_font_map(Some(&font_map));
     context
+}
+
+#[test]
+fn default_terminal_font_covers_nerd_glyphs_or_measures_generic_fallback_and_resizes() {
+    let context = native_context();
+    let mut profile = TerminalSettingsV1::default().resolve(&TerminalOverrides::default());
+    let environment = FontMetricEnvironment::new(1.0, 96.0).unwrap();
+    let available = context.list_families().iter().any(|family| {
+        family.name().eq_ignore_ascii_case(&profile.font_family) && family.is_monospace()
+    });
+    let mut service = FontMetricsService::default();
+    let measured = changed(service.measure(&context, &profile, environment).unwrap());
+    assert_eq!(measured.fallback_used, !available);
+    assert!(measured.font_description.is_size_absolute());
+    assert_eq!(
+        measured.font_description.size(),
+        (profile.font_size * pango::SCALE as f32) as i32
+    );
+    assert!(measured.metrics.cell_width > 0.0 && measured.metrics.cell_height > 0.0);
+    assert!(measured.minimum_line_separation >= rshell_ui::TERMINAL_LINE_SPACING);
+
+    if available {
+        let font = context.load_font(&measured.font_description).unwrap();
+        assert_eq!(
+            font.describe().family().as_deref(),
+            Some(profile.font_family.as_str())
+        );
+        let layout = pango::Layout::new(&context);
+        layout.set_font_description(Some(&measured.font_description));
+        layout.set_text("M");
+        let ascii_advance = layout.size().0;
+        for glyph in [
+            '\u{e0b0}', '\u{f120}', '\u{f07c}', '\u{f126}', '\u{f17a}', '\u{f487}', '\u{f0e7}',
+        ] {
+            assert!(
+                font.has_char(glyph),
+                "default font lacks U+{:04X}",
+                u32::from(glyph)
+            );
+            layout.set_text(&glyph.to_string());
+            assert_eq!(layout.unknown_glyphs_count(), 0);
+            assert_eq!(
+                layout.size().0,
+                ascii_advance,
+                "Nerd glyph must stay monospace"
+            );
+        }
+    } else {
+        let generic = TerminalSettingsV1 {
+            font_family: "Monospace".into(),
+            ..TerminalSettingsV1::default()
+        }
+        .resolve(&TerminalOverrides::default());
+        let direct = changed(
+            FontMetricsService::default()
+                .measure(&context, &generic, environment)
+                .unwrap(),
+        );
+        assert_eq!(measured.font_description, direct.font_description);
+        assert_eq!(measured.metrics, direct.metrics);
+    }
+
+    profile.font_size += 6.0;
+    let larger = changed(service.measure(&context, &profile, environment).unwrap());
+    assert_eq!(larger.key.font_size_bits, profile.font_size.to_bits());
+    assert!(larger.metrics.cell_width > measured.metrics.cell_width);
+    assert!(larger.metrics.cell_height > measured.metrics.cell_height);
 }
 
 fn changed(change: MetricsChange) -> MeasuredFontMetrics {

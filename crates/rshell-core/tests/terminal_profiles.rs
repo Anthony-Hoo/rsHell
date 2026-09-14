@@ -76,6 +76,7 @@ fn overrides_merge_over_global_and_clamp_terminal_values() {
         initial_cols: Some(1_000),
         initial_rows: Some(0),
         scrollback_lines: Some(1),
+        font_family: Some("Consolas".into()),
         font_size: Some(80.0),
         color_scheme: Some(ColorScheme::Dracula),
         ..TerminalOverrides::default()
@@ -86,6 +87,7 @@ fn overrides_merge_over_global_and_clamp_terminal_values() {
     assert_eq!(resolved.terminal_type, "custom-term");
     assert_eq!((resolved.cols, resolved.rows), (999, 1));
     assert_eq!(resolved.scrollback_lines, 100);
+    assert_eq!(resolved.font_family, "Consolas");
     assert_eq!(resolved.font_size, 72.0);
     assert_eq!(resolved.color_scheme, ColorScheme::Dracula);
     assert_eq!(resolved.key_bindings, settings.key_bindings);
@@ -118,8 +120,8 @@ fn default_profile_settings_and_connection_path_are_stable() {
         (120, 36)
     );
     assert_eq!(profile.settings.scrollback_lines, 6_000);
-    assert_eq!(profile.settings.font_family, "Cascadia Mono");
-    assert_eq!(profile.settings.font_size, 15.0);
+    assert_eq!(profile.settings.font_family, "CaskaydiaCove NF Mono");
+    assert_eq!(profile.settings.font_size, 18.0);
     assert!(profile.settings.left_alt_as_meta);
     assert!(profile.settings.right_alt_as_meta);
     assert!(!profile.settings.enable_csi_u);
@@ -131,6 +133,9 @@ fn default_profile_settings_and_connection_path_are_stable() {
     assert_eq!(app_settings.default_terminal_profile, profile.id);
     assert_eq!(connection.terminal_profile_id, None);
     assert_eq!(connection.terminal_overrides, TerminalOverrides::default());
+    let resolved = profile.settings.resolve(&connection.terminal_overrides);
+    assert_eq!(resolved.font_family, profile.settings.font_family);
+    assert_eq!(resolved.font_size, profile.settings.font_size);
 }
 
 #[test]

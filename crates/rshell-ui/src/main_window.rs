@@ -3,6 +3,8 @@ use std::{
     sync::{Arc, atomic::Ordering},
 };
 
+mod size;
+
 use crate::{
     ConnectionEditor, ConnectionEditorInit, ConnectionSidebar, ConnectionSidebarInit, ImportDialog,
     ImportDialogInit, InteractionDialog, InteractionDialogInit, MainWindowInit, MainWindowMsg,
@@ -22,6 +24,7 @@ use relm4::{
     gtk,
 };
 use rshell_core::{AppViewModel, ConnectionId, InteractionId, SessionId, UiCommandPort};
+use size::startup_window_size;
 
 pub struct MainWindow {
     pub(crate) command_port: Arc<dyn UiCommandPort>,
@@ -56,10 +59,11 @@ impl SimpleComponent for MainWindow {
     type Widgets = MainWindowWidgets;
 
     fn init_root() -> Self::Root {
+        let (default_width, default_height) = startup_window_size();
         gtk::ApplicationWindow::builder()
             .title("rsHell")
-            .default_width(1_360)
-            .default_height(860)
+            .default_width(default_width)
+            .default_height(default_height)
             .build()
     }
 

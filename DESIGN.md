@@ -24,7 +24,9 @@ from opaque Fluent dark tonal layers and boundaries, never floating cards.
 | Token | Value |
 |---|---|
 | font-ui | `"Segoe UI Variable Text", "Segoe UI Variable", "Segoe UI", system-ui, sans-serif` |
-| font-terminal | `"Cascadia Mono", "Microsoft YaHei UI", "Segoe UI Emoji", "Consolas", monospace` |
+| font-terminal | `"Cascadia Mono", "Microsoft YaHei UI", "Segoe UI Emoji", "Consolas", monospace` (GTK CSS stack) |
+| font-terminal-default | `"CaskaydiaCove NF Mono"` (single requested monospace family) |
+| type-terminal-default | 18 absolute logical px |
 | type-root | 15 logical px |
 | type-secondary | 14 logical px |
 | type-control | 15 logical px |
@@ -37,6 +39,11 @@ from opaque Fluent dark tonal layers and boundaries, never floating cards.
 | navigation-compact | 48 logical px |
 | navigation-standard | 260 logical px |
 | navigation-wide-max | 280 logical px |
+| window-startup-target | 80% of GTK-reported monitor geometry |
+| window-startup-min | 960 × 640 logical px when the monitor permits |
+| window-startup-max | 1920 × 1200 logical px |
+| window-startup-margin | 48 logical px total per dimension |
+| window-startup-fallback | 1360 × 860 logical px |
 | surface-shell | `#202020` |
 | surface-command | `#202020` |
 | surface-sidebar | `#202020` |
@@ -72,6 +79,18 @@ Connection identity uses weight rather than oversized type. Controls provide at
 least a 36px readable line box. Spacing and modal composition follow a 4px
 rhythm; 2px is reserved for terminal line separation, borders, separators, and
 focus treatment rather than general layout spacing.
+
+New terminal profiles request `font-terminal-default` at `type-terminal-default` for
+readable terminal text and Nerd/Powerline prompt glyphs on the current Windows
+installation. This optional font is not bundled or installed by rsHell. If the
+exact monospace family is unavailable, the existing measured `Monospace`
+fallback preserves the requested size. Windows CJK and emoji retain their
+per-text `Microsoft YaHei UI` and `Segoe UI Emoji` routing; the requested family
+is not the `font-terminal` CSS stack, which does not set the drawn canvas font.
+Explicit saved profile values and
+connection overrides are never replaced by changed built-in defaults. Settings
+allows font family and size edits (6–72 logical px in 0.5px steps), with explicit
+connection overrides taking precedence over the selected profile.
 
 ## 2. Safe interrupt and recovery
 
@@ -115,6 +134,15 @@ physical size; no external payload is introduced.
 
 Layout follows the main window's realized logical allocation and reparents
 existing controllers without recreating reducer or session state.
+
+A newly constructed main window targets 80% of the first monitor geometry GTK
+reports, floored to the 4px spacing grid. The result is capped at 1920×1200 and
+normally raised to 960×640, but the 48px total per-dimension monitor margin takes
+priority over that minimum on a small screen. GTK's geometry is the complete
+monitor rectangle, not a measured work area; the percentage and margin reserve
+space for system chrome. If GTK reports no monitor, startup retains the prior
+1360×860 default. This selection runs once during root construction and does not
+override resizing after the window is realized.
 
 | Mode | Width | Navigation and terminal behavior |
 |---|---:|---|
